@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CourseSourceType {
+  text
+  pdf
+  image
+  document
+  note
+}
+
+enum Difficulty {
+  easy
+  normal
+  hard
+}
+
+enum EvaluationStatus {
+  planned
+  completed
+  cancelled
+}
+
+enum Importance {
+  low
+  normal
+  high
+  critical
+}
+
+enum RevisionType {
+  learning
+  memorization
+  practice
+  flashcards
+  quiz
+  final_review
+}
+
+enum RevisionStatus {
+  planned
+  completed
+  skipped
+}
+
+enum HomeworkStatus {
+  todo
+  in_progress
+  completed
+}
+
+enum EventType {
+  school
+  personal
+  exam
+  homework
+  revision
+}
+
+enum EventSource {
+  internal
+  google
+  notion
+}
+
+enum AutomationJobType {
+  create_revision_plan
+  sync_google_calendar
+  process_course
+  generate_study_sheet
+  generate_flashcards
+  generate_quiz
+  update_mastery
+  recalculate_workload
+}
+
+enum AutomationJobStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+model User {
+  id             String            @id @default(cuid())
+  name           String?
+  email          String?           @unique
+  image          String?
+  subjects       Subject[]
+  chapters       Chapter[]
+  courses        Course[]
+  evaluations    Evaluation[]
+  revisions      RevisionSession[]
+  homework       Homework[]
+  grades         Grade[]
+  schedules      Schedule[]
+  events         Event[]
+  automationJobs AutomationJob[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model Subject {
+  id          String            @id @default(cuid())
+  userId      String
+  name        String
+  shortName   String
+  color       String            @default("#f27645")
+  icon        String?
+  teacher     String?
+  coefficient Float             @default(1)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapters    Chapter[]
+  courses     Course[]
+  evaluations Evaluation[]
+  revisions   RevisionSession[]
+  homework    Homework[]
+  grades      Grade[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  schedules   Schedule[]
+
+  @@index([userId])
+}
+
+model Chapter {
+  id          String            @id @default(cuid())
+  userId      String
+  subjectId   String
+  name        String
+  description String?
+  mastery     Int               @default(0)
+  difficulty  Difficulty        @default(normal)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  courses     Course[]
+  evaluations Evaluation[]
+  revisions   RevisionSession[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([userId, subjectId])
+}
+
+model Course {
+  id          String           @id @default(cuid())
+  userId      String
+  subjectId   String
+  chapterId   String?
+  title       String
+  description String?
+  content     String?
+  sourceType  CourseSourceType @default(text)
+  fileUrl     String?
+  difficulty  Difficulty       @default(normal)
+  mastery     Int              @default(0)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapter     Chapter?         @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId, subjectId])
+}
+
+model Evaluation {
+  id                String            @id @default(cuid())
+  userId            String
+  subjectId         String
+  title             String
+  date              DateTime
+  description       String?
+  importance        Importance        @default(normal)
+  difficulty        Difficulty        @default(normal)
+  status            EvaluationStatus  @default(planned)
+  estimatedWorkload Int               @default(60)
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject           Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapters          Chapter[]
+  revisions         RevisionSession[]
+  grades            Grade[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([userId, date])
+}
+
+model RevisionSession {
+  id              String         @id @default(cuid())
+  userId          String
+  subjectId       String
+  chapterId       String?
+  evaluationId    String?
+  title           String
+  date            DateTime
+  startTime       String?
+  duration        Int            @default(30)
+  type            RevisionType   @default(learning)
+  status          RevisionStatus @default(planned)
+  priority        Importance     @default(normal)
+  notes           String?
+  calendarEventId String?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject         Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapter         Chapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  evaluation      Evaluation?    @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([userId, date])
+}
+
+model Homework {
+  id                String         @id @default(cuid())
+  userId            String
+  subjectId         String
+  title             String
+  description       String?
+  dueDate           DateTime
+  estimatedDuration Int            @default(30)
+  priority          Importance     @default(normal)
+  status            HomeworkStatus @default(todo)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject           Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([userId, dueDate])
+}
+
+model Grade {
+  id           String      @id @default(cuid())
+  userId       String
+  subjectId    String
+  evaluationId String?
+  grade        Float
+  maxGrade     Float       @default(20)
+  coefficient  Float       @default(1)
+  date         DateTime
+  comment      String?
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject      Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, subjectId])
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  subjectId String?
+  location  String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, dayOfWeek])
+}
+
+model Event {
+  id         String      @id @default(cuid())
+  userId     String
+  title      String
+  start      DateTime
+  end        DateTime
+  type       EventType
+  source     EventSource @default(internal)
+  externalId String?
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, externalId])
+  @@index([userId, start])
+}
+
+model AutomationJob {
+  id        String              @id @default(cuid())
+  userId    String
+  type      AutomationJobType
+  status    AutomationJobStatus @default(pending)
+  payload   Json
+  error     String?
+  attempts  Int                 @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
