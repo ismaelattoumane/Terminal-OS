@@ -50,11 +50,17 @@ export function structureCourseText(title: string, raw: string): string {
   if (!lines.length) return clean;
 
   const sectionBreaks: number[] = [];
+  // B46 : l'ancienne heuristique traitait toute ligne courte sans ponctuation
+  // finale comme un titre (ex. « et », « ou » → plans aberrants). On exige
+  // désormais : commence par une majuscure/chiffre, 2 à 12 mots, et la ligne
+  // suivante est un vrai contenu (longue ou commençant par une puce).
   for (let index = 0; index < lines.length; index += 1) {
     const current = lines[index];
     const next = lines[index + 1];
-    const isShort = current.length <= 90 && !current.match(/[.!?:;]$/);
-    if (isShort && next && (next.length > 30 || next.match(/^[-*•]/))) sectionBreaks.push(index);
+    const isShort = current.length <= 80 && !current.match(/[.!?:;,]$/);
+    const words = current.trim().split(/\s+/).length;
+    const startsWithCapital = /^[A-ZÀ-Ý0-9]/.test(current);
+    if (isShort && startsWithCapital && words >= 2 && words <= 12 && next && (next.length > 30 || next.match(/^[-*•]/) || next.match(/^#{1,3}\s/))) sectionBreaks.push(index);
   }
 
   const sentences = clean.split(/[.!?]+/).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 20);

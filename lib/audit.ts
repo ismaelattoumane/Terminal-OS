@@ -11,6 +11,12 @@ const PRUNE_CHANCE = 0.05;
  * survivent aux redémarrages et sont cohérentes en multi-instances.
  * L'écriture est best-effort — un échec de journalisation ne doit jamais faire
  * échouer la requête métier qui l'a déclenché.
+ *
+ * B45 : l'élagage est probabiliste (5 % de chance par écriture) pour borner la
+ * table sans coût à chaque insertion. La borne de 300 entrées/utilisateur n'est
+ * pas garantie de manière déterministe (concurrence + hasard) : des entrées
+ * supplémentaires peuvent exister temporairement. C'est un choix documenté —
+ * pour une borne stricte, préférer une tâche planifiée (cron).
  */
 export async function auditLog(actorId: string, action: string, meta: AuditMeta = {}) {
   if (!actorId || !action) return;
