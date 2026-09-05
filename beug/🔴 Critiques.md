@@ -64,3 +64,17 @@ L'écran Quiz laissait choisir n'importe quel cours de la matière, mais l'API e
 - `FlashcardManager` a maintenant un formulaire « Nouvelles flashcards » : matière → chapitre → cours (optionnel) + question/réponse (optionnelles).
 - Si question + réponse sont saisies → création manuelle ; sinon → génération automatique depuis le cours choisi (le point d'entrée IA existant).
 - Validations côté client avec messages clairs, état `busy` sur le bouton.
+
+---
+
+## C01 — Flashcards liées à un chapitre externe ou à un mauvais cours
+
+**Fichier modifié :** `app/api/flashcards/route.ts`
+
+La route acceptait n'importe quel `chapterId` CUID sans vérifier son propriétaire. Elle acceptait aussi un cours de n'importe quel chapitre pour générer des cartes. Cela permettait de créer des relations incohérentes, voire une carte pointant vers le chapitre d'un autre compte.
+
+**Correctif :**
+
+- le chapitre est maintenant chargé avec `id` **et** `userId` avant toute création ;
+- le cours de génération doit appartenir au même utilisateur **et** au chapitre choisi ;
+- les créations manuelles et générées renseignent systématiquement `subjectId` depuis le chapitre validé.
