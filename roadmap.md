@@ -19,13 +19,13 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 - [x] Tailwind CSS — installé et intégré au style de l'application.
 - [x] PostgreSQL — instance de développement Docker provisionnée et migration initiale appliquée.
 - [x] Prisma — schéma multi-utilisateur et client Prisma généré.
-- [~] Auth — Auth.js/NextAuth, écran `/login`, création automatique du compte Prisma au retour Google et routes protégées ; configuration OAuth réelle à fournir dans `.env`.
+- [x] Auth — Auth.js/NextAuth, `SessionProvider`, écran `/login`, connexion/déconnexion Google, création automatique du compte Prisma et routes protégées.
 - [x] Layout — layout Terminal OS avec sidebar desktop, navigation mobile et responsive design.
-- [~] Dashboard — interface responsive branchée à `/api/dashboard` pour les métriques, sessions et matières réelles ; fallback d'aperçu hors session conservé, actions de session et navigation calendrier à compléter.
+- [x] Dashboard — interface responsive alimentée par `/api/dashboard`, prochain contrôle calculé, charge/progression réelles, états sans session et actions de complétion des révisions.
 - [x] Subjects — modèle Prisma, CRUD API sécurisé et écran de création/liste avec suppression.
 - [x] Chapters — modèle Prisma, CRUD API sécurisé et écran de création/liste avec suppression.
 - [x] Courses — modèle Prisma, CRUD API sécurisé et écran de création/liste de cours texte ; import de fichiers réservé à la phase 4.
-- [~] Evaluations — modèle, CRUD API, écran de création, création automatique des sessions et action interface `Terminer` ; édition du titre/date et annulation depuis l'interface à compléter.
+- [x] Evaluations — modèle, CRUD API, validation de propriété matière/chapitres, création automatique des sessions, édition titre/date, annulation, terminaison et suppression.
 - [x] RevisionSessions — modèle, création/liste/mise à jour API et écran de liste avec actions `Terminée` et `Ignorer`.
 
 ### Validation phase 1
@@ -39,11 +39,13 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 - [x] Build après ajout de l'authentification et des écrans CRUD
 - [x] Build après ajout des actions de statut des révisions
 - [x] Build après ajout de l'action de statut des évaluations
+- [x] Build après finalisation Auth, Dashboard et Evaluations
+- [x] Migration et build après ajout de l’idempotence AutomationJob
 
 ## Phase 2 — Automatisation et calendrier interne
 
 - [x] RevisionPlanner — calcul des étapes selon date du contrôle, difficulté, importance, maîtrise, jours disponibles et charge existante.
-- [~] Automatisations — `AutomationJob`, API `/api/automation`, service de traitement avec revendication atomique, limite de trois tentatives, journalisation, handlers locaux et endpoint cron protégé `/api/automation/worker` ; planification cloud et handlers IA/Google restent à ajouter.
+- [x] Automatisations — `AutomationJob` idempotent, API `/api/automation`, déclenchement automatique des recalculs après évaluation, revendication atomique, limite de trois tentatives, journalisation, handlers locaux et endpoint cron protégé `/api/automation/worker`.
 - [x] Calendrier interne — modèles `Schedule` et `Event`, routes `/api/calendar` et `/api/schedule`, vue calendrier, création d'événements, suppression de créneaux et intégration des périodes occupées dans le planner.
 
 ## Phase 3 — Google Calendar
@@ -52,7 +54,7 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 - [x] Service `CalendarService` séparé dans `services/calendar.ts`.
 - [x] Création d'événements pour les `RevisionSession` via `/api/calendar/sync`.
 - [x] Modification sans doublons via `calendarEventId` et suppression individuelle via `/api/calendar/sync/:revisionId`.
-- [~] Synchronisation aller-retour et gestion des erreurs — synchronisation sortante globale et individuelle disponibles avec réponses d'erreur explicites ; import des changements Google et affichage des commandes dans l'UI à finaliser.
+- [x] Synchronisation aller-retour et gestion des erreurs — synchronisation sortante et import Google idempotent via `GET/POST /api/calendar/sync`, avec réponses d'erreur explicites ; test réel du flux complet à poursuivre selon les événements du compte.
 
 ### Tests phase 3
 
@@ -60,36 +62,49 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 - [x] Le fournisseur Google et son callback sont exposés par Auth.js.
 - [x] Le endpoint CSRF Auth.js répond `200`.
 - [x] Les routes protégées répondent `401` sans session.
-- [ ] Consentement OAuth et synchronisation avec un compte Google réel.
+- [x] Consentement OAuth et connexion Google testés dans le navigateur.
+- [ ] Test de synchronisation avec un événement Google réel.
 
 ## Phase 4 — Import et stockage des cours
 
-- [ ] Upload PDF, PNG, JPG, DOCX et TXT.
-- [ ] Stockage S3 compatible avec URLs sécurisées et limites de taille.
-- [ ] Extraction de texte pour PDF, DOCX et TXT.
+- [x] Upload PDF, PNG, JPG, DOCX et TXT avec limite de 15 Mo et validation serveur.
+- [~] Stockage S3 compatible — adaptateur S3 présent et activé par variables d'environnement ; test avec un bucket réel à faire.
+- [x] Extraction de texte pour PDF, DOCX et TXT.
 - [ ] OCR pour les images.
-- [ ] Pipeline `UPLOAD -> EXTRACTION -> STRUCTURATION -> COURS`.
-- [ ] Jobs relançables pour les traitements longs.
+- [~] Pipeline `UPLOAD -> EXTRACTION -> STRUCTURATION -> COURS` — upload, extraction et création du cours en place ; structuration/OCR à ajouter.
+- [~] Jobs relançables pour les traitements longs — l’upload/extraction synchrone est disponible ; le branchement du traitement multipart aux `AutomationJob` reste à faire.
 
 ## Phase 5 — IA et apprentissage actif
 
-- [ ] Abstraction `AIProvider` configurable par variables d'environnement.
-- [ ] Mode fonctionnel sans clé IA.
-- [ ] Génération de fiches de révision basée uniquement sur les cours.
-- [ ] Modèle et interface `StudySheet`.
-- [ ] Modèle et répétition espacée `Flashcard`.
-- [ ] Générateur de quiz QCM, vrai/faux et réponse courte.
-- [ ] `QuizAttempt` et mise à jour de la maîtrise.
-- [ ] `MasteryService` combinant quiz, flashcards, révisions et auto-évaluation.
+- [x] Abstraction `AIProvider` avec provider local configurable et remplaçable.
+- [x] Mode fonctionnel sans clé IA.
+- [x] Génération locale de fiches basée uniquement sur les cours sélectionnés.
+- [~] Modèle et interface `StudySheet` — modèle et API présents ; écran dédié à créer.
+- [x] Modèle et répétition espacée `Flashcard` via `POST /api/flashcards/:id/review`.
+- [x] Générateur de quiz à réponse courte local depuis un cours via `/api/quizzes`.
+- [x] `QuizAttempt` et mise à jour de la maîtrise via `/api/quizzes/attempt`.
+- [~] `MasteryService` — maîtrise alimentée par les tentatives de quiz et sessions ; fusion flashcards/auto-évaluation à approfondir.
+
+### Validation phase 5
+
+- [x] Migration Prisma `study_learning` appliquée.
+- [x] API fiches et flashcards compilées et protégées par utilisateur.
+- [x] Migration Prisma `quiz_attempts` appliquée et API quiz compilée.
 
 ## Phase 6 — PWA et expérience mobile
 
-- [ ] `manifest.json` et icônes d'installation.
-- [ ] Service worker et offline fallback.
-- [ ] Cache sélectif des données non sensibles.
+- [x] Manifest PWA et icône d'installation.
+- [x] Service worker et offline fallback.
+- [x] Cache limité au shell et exclusion explicite des routes `/api/` sensibles.
 - [ ] Synchronisation différée à la reconnexion.
 - [ ] Branchement complet du dashboard mobile aux API.
 - [ ] Tests sur iPhone, Android, tablette et desktop.
+
+### Validation phase 6
+
+- [x] Manifest généré par `/manifest.webmanifest`.
+- [x] Service worker enregistré côté client.
+- [x] Build PWA validé.
 
 ## Phase 7 — Statistiques, robustesse et déploiement
 

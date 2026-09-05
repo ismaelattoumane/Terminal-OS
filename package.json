@@ -15,10 +15,13 @@
     "db:down": "docker compose down"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
     "@prisma/client": "^6.19.0",
     "lucide-react": "^1.41.0",
+    "mammoth": "^1.12.2",
     "next": "16.3.4",
     "next-auth": "^4.24.15",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.5.4"

@@ -87,6 +87,12 @@ enum AutomationJobStatus {
   failed
 }
 
+enum FlashcardDifficulty {
+  easy
+  medium
+  hard
+}
+
 model User {
   id             String            @id @default(cuid())
   name           String?
@@ -102,48 +108,57 @@ model User {
   schedules      Schedule[]
   events         Event[]
   automationJobs AutomationJob[]
+  studySheets    StudySheet[]
+  flashcards     Flashcard[]
+  quizAttempts   QuizAttempt[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
 
 model Subject {
-  id          String            @id @default(cuid())
-  userId      String
-  name        String
-  shortName   String
-  color       String            @default("#f27645")
-  icon        String?
-  teacher     String?
-  coefficient Float             @default(1)
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chapters    Chapter[]
-  courses     Course[]
-  evaluations Evaluation[]
-  revisions   RevisionSession[]
-  homework    Homework[]
-  grades      Grade[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  schedules   Schedule[]
+  id           String            @id @default(cuid())
+  userId       String
+  name         String
+  shortName    String
+  color        String            @default("#f27645")
+  icon         String?
+  teacher      String?
+  coefficient  Float             @default(1)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapters     Chapter[]
+  courses      Course[]
+  evaluations  Evaluation[]
+  revisions    RevisionSession[]
+  studySheets  StudySheet[]
+  flashcards   Flashcard[]
+  quizAttempts QuizAttempt[]
+  homework     Homework[]
+  grades       Grade[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  schedules    Schedule[]
 
   @@index([userId])
 }
 
 model Chapter {
-  id          String            @id @default(cuid())
-  userId      String
-  subjectId   String
-  name        String
-  description String?
-  mastery     Int               @default(0)
-  difficulty  Difficulty        @default(normal)
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  courses     Course[]
-  evaluations Evaluation[]
-  revisions   RevisionSession[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id           String            @id @default(cuid())
+  userId       String
+  subjectId    String
+  name         String
+  description  String?
+  mastery      Int               @default(0)
+  difficulty   Difficulty        @default(normal)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject      Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  courses      Course[]
+  evaluations  Evaluation[]
+  revisions    RevisionSession[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  studySheets  StudySheet[]
+  flashcards   Flashcard[]
+  quizAttempts QuizAttempt[]
 
   @@index([userId, subjectId])
 }
@@ -281,16 +296,70 @@ model Event {
 }
 
 model AutomationJob {
-  id        String              @id @default(cuid())
-  userId    String
-  type      AutomationJobType
-  status    AutomationJobStatus @default(pending)
-  payload   Json
-  error     String?
-  attempts  Int                 @default(0)
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
-  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String              @id @default(cuid())
+  userId         String
+  idempotencyKey String              @default(cuid())
+  type           AutomationJobType
+  status         AutomationJobStatus @default(pending)
+  payload        Json
+  error          String?
+  attempts       Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, status])
+}
+
+model StudySheet {
+  id              String   @id @default(cuid())
+  userId          String
+  subjectId       String
+  chapterId       String?
+  title           String
+  content         Json
+  sourceCourseIds String[]
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapter         Chapter? @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, subjectId])
+}
+
+model Flashcard {
+  id          String              @id @default(cuid())
+  userId      String
+  chapterId   String
+  question    String
+  answer      String
+  difficulty  FlashcardDifficulty @default(medium)
+  nextReview  DateTime            @default(now())
+  interval    Int                 @default(1)
+  easeFactor  Float               @default(2.5)
+  repetitions Int                 @default(0)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter     Chapter             @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  subject     Subject?            @relation(fields: [subjectId], references: [id])
+  subjectId   String?
+
+  @@index([userId, nextReview])
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  chapterId String
+  score     Float
+  date      DateTime @default(now())
+  questions Json
+  answers   Json
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+  subjectId String?
+
+  @@index([userId, chapterId, date])
 }

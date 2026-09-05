@@ -16,7 +16,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!parsed.success) return NextResponse.json({ error: "Données invalides", details: parsed.error.flatten() }, { status: 400 });
   const existing = await prisma.evaluation.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Évaluation introuvable" }, { status: 404 });
-  return NextResponse.json(await prisma.evaluation.update({ where: { id }, data: parsed.data }));
+  const evaluation = await prisma.evaluation.update({ where: { id }, data: parsed.data });
+  if (parsed.data.date && parsed.data.date.getTime() !== existing.date.getTime()) {
+    await prisma.revisionSession.deleteMany({ where: { evaluationId: id, status: "planned" } });
+  }
+  return NextResponse.json(evaluation);
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {

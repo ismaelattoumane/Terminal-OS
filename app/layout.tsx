@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { PwaRegister } from "@/components/pwa-register";
+import { AuthProvider } from "@/components/auth-provider";
 
 export const metadata: Metadata = {
   title: "Terminal OS | Pilotage de la Terminale",
@@ -9,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body><AuthProvider><PwaRegister />{children}</AuthProvider></body>
     </html>
   );
 }

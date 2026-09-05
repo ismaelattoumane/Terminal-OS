@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { recalculateChapterMastery } from "@/services/mastery";
 
 type JobType = "create_revision_plan" | "sync_google_calendar" | "process_course" | "generate_study_sheet" | "generate_flashcards" | "generate_quiz" | "update_mastery" | "recalculate_workload";
 
-export async function enqueueJob(userId: string, type: JobType, payload: object) {
-  return prisma.automationJob.create({ data: { userId, type, payload } });
+export async function enqueueJob(userId: string, type: JobType, payload: object, idempotencyKey = `${type}:${JSON.stringify(payload)}`) {
+  return prisma.automationJob.upsert({ where: { userId_idempotencyKey: { userId, idempotencyKey } }, update: {}, create: { userId, type, payload, idempotencyKey } });
 }
 
 export async function processNextJob(userId: string) {
@@ -24,11 +25,7 @@ export async function processNextJob(userId: string) {
 async function runHandler(type: JobType, userId: string, payload: unknown) {
   const data = payload as { chapterId?: string; courseId?: string };
   if (type === "update_mastery" && data.chapterId) {
-    const [completed, total] = await Promise.all([
-      prisma.revisionSession.count({ where: { userId, chapterId: data.chapterId, status: "completed" } }),
-      prisma.revisionSession.count({ where: { userId, chapterId: data.chapterId } }),
-    ]);
-    await prisma.chapter.updateMany({ where: { id: data.chapterId, userId }, data: { mastery: total ? Math.min(100, Math.round((completed / total) * 100)) : 0 } });
+    await recalculateChapterMastery(userId, data.chapterId);
     return;
   }
   if (type === "process_course" && data.courseId) {

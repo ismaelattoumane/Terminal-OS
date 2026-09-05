@@ -2,6 +2,24 @@ import { prisma } from "@/lib/prisma";
 
 type GoogleEvent = { id?: string; summary: string; description: string; start: { dateTime: string; timeZone: string }; end: { dateTime: string; timeZone: string } };
 
+export async function importGoogleCalendarEvents(accessToken: string, userId: string, timeMin?: Date, timeMax?: Date) {
+  const params = new URLSearchParams({ singleEvents: "true", showDeleted: "false", maxResults: "2500" });
+  if (timeMin) params.set("timeMin", timeMin.toISOString());
+  if (timeMax) params.set("timeMax", timeMax.toISOString());
+  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error(`Google Calendar a répondu ${response.status}`);
+  const data = await response.json() as { items?: Array<{ id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string } }> };
+  let imported = 0;
+  for (const item of data.items ?? []) {
+    const start = item.start?.dateTime ?? (item.start?.date ? `${item.start.date}T00:00:00.000Z` : null);
+    const end = item.end?.dateTime ?? (item.end?.date ? `${item.end.date}T23:59:59.000Z` : null);
+    if (!start || !end) continue;
+    await prisma.event.upsert({ where: { userId_source_externalId: { userId, source: "google", externalId: item.id } }, update: { title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end) }, create: { userId, title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end), type: "personal", source: "google", externalId: item.id } });
+    imported += 1;
+  }
+  return imported;
+}
+
 export async function syncRevisionToGoogleCalendar(accessToken: string, revisionId: string, userId: string) {
   const revision = await prisma.revisionSession.findFirst({ where: { id: revisionId, userId }, include: { subject: true, chapter: true, evaluation: true } });
   if (!revision) throw new Error("Révision introuvable");

@@ -73,6 +73,8 @@ npm run db:migrate
 - `GET /api/dashboard` : calcule les indicateurs du dashboard depuis PostgreSQL.
 - `GET/POST /api/automation` : journalise un job utilisateur et peut traiter le prochain job avec `?process=true`.
 - `POST /api/automation/worker` : traite un job par utilisateur avec `Authorization: Bearer $CRON_SECRET`, pour un cron cloud.
+- `POST /api/courses/upload` : importe un PDF, DOCX, TXT, PNG ou JPG et crée un cours après extraction quand elle est disponible.
+- `GET/POST /api/calendar/sync` : importe les événements Google et synchronise les révisions.
 
 Les routes renvoient `401` sans session Auth.js et ne permettent pas de lire un autre compte.
 
