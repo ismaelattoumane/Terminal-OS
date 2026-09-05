@@ -22,7 +22,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     // B03 : la date change => les anciennes sessions planifiées sont supprimées
     // PUIS le plan est régénéré avec les chapitres liés à l'évaluation.
     await prisma.revisionSession.deleteMany({ where: { evaluationId: id, status: "planned" } });
-    try { await regenerateRevisionPlan(user.id, id); } catch { /* plan régénérable depuis les Automatisations */ }
+    try { await regenerateRevisionPlan(user.id, id); } catch {
+      return NextResponse.json({ error: "Évaluation mise à jour, mais la régénération du plan a échoué. Relance-la depuis Automatisations." }, { status: 500 });
+    }
   }
   // B15 : terminer ou annuler une évaluation clôt ses sessions de révision.
   if (parsed.data.status === "completed") await prisma.revisionSession.updateMany({ where: { evaluationId: id, status: "planned" }, data: { status: "completed" } });

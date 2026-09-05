@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const { chapterIds, ...data } = parsed.data;
   const subject = await prisma.subject.findFirst({ where: { id: data.subjectId, userId: user.id }, select: { id: true } });
   if (!subject) return NextResponse.json({ error: "Matière introuvable" }, { status: 404 });
-  const chapters = await prisma.chapter.findMany({ where: { id: { in: chapterIds }, userId: user.id }, select: { id: true, mastery: true } });
+  const chapters = await prisma.chapter.findMany({ where: { id: { in: chapterIds }, userId: user.id, subjectId: data.subjectId }, select: { id: true, mastery: true } });
   if (chapters.length !== chapterIds.length) return NextResponse.json({ error: "Un ou plusieurs chapitres sont invalides" }, { status: 400 });
   const evaluation = await prisma.evaluation.create({ data: { ...data, userId: user.id, chapters: { connect: chapters.map(({ id }) => ({ id })) } } });
   const [schedules, events] = await Promise.all([

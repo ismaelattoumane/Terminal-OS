@@ -5,7 +5,7 @@ import { CalendarDays, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { queuedFetch } from "@/lib/offline-queue";
 
-type CalendarItem = { id: string; title: string; start: string; end: string; type: string };
+type CalendarItem = { id: string; title: string; start: string; end: string; type: string; source: "internal" | "google" | "notion" };
 type Schedule = { id: string; dayOfWeek: number; startTime: string; endTime: string; location: string | null; subject: { name: string } | null };
 type SubjectLite = { id: string; name: string };
 type GoogleStatus = { connected: boolean; configured: boolean; redirectUri: string; callbackMatchesNextAuth: boolean; timezone: string; hint: string };
@@ -139,7 +139,7 @@ export function CalendarWorkspace() {
       </div>
       <section className="calendar-board">
         <div className="list-heading"><h2>Cette semaine</h2><span>{events.length} événement(s)</span></div>
-        {events.length ? events.map((event) => <div className="calendar-event" key={event.id}><span className="event-color" /><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })} - {new Date(event.end).toLocaleTimeString("fr-FR", { timeStyle: "short" })}</span></div><b>{event.type}</b><button className="delete-button" onClick={() => deleteEvent(event.id)} aria-label={`Supprimer ${event.title}`}><Trash2 size={15} /></button></div>) : <p className="empty-state">Aucun événement personnel pour le moment.</p>}
+        {events.length ? events.map((event) => <div className="calendar-event" key={event.id}><span className="event-color" /><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })} - {new Date(event.end).toLocaleTimeString("fr-FR", { timeStyle: "short" })}{event.source === "google" ? " · Google Calendar" : ""}</span></div><b>{event.type}</b>{event.source !== "google" && <button className="delete-button" onClick={() => deleteEvent(event.id)} aria-label={`Supprimer ${event.title}`}><Trash2 size={15} /></button>}</div>) : <p className="empty-state">Aucun événement personnel pour le moment.</p>}
       </section>
       <section className="calendar-board">
         <div className="list-heading"><h2>Créneaux de cours protégés</h2><span>{schedules.length}</span></div>

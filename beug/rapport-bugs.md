@@ -7,16 +7,18 @@
 | Gravité | Nombre |
 |---|---:|
 | 🔴 | 0 |
-| 🟠 | 6 |
+| 🟠 | 1 |
 | 🟡 | 5 |
 | 🔵 | 4 |
-| **Total** | **15** |
+| **Total** | **10** |
 
 ## 🔴 Critique
 
 Aucun défaut critique ouvert. C01 a été corrigé dans le commit `fix(critique): sécuriser les relations des flashcards`.
 
-## 🟠 Majeurs
+## 🟠 Majeurs — corrigés
+
+Les points M01 à M05 ci-dessous sont conservés pour traçabilité et corrigés dans le commit `fix(majeur): fiabiliser les relations et les fichiers`. M06 reste ouvert : son correctif chevauche une modification non committée préexistante de `proxy.ts`.
 
 ### M01 — Une évaluation accepte des chapitres d'une autre matière
 

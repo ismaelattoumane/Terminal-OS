@@ -72,3 +72,17 @@ La page (serveur) détecte `GOOGLE_CLIENT_ID/SECRET` et affiche un message expli
 ## B22 — Labels d'audit « sheet.generate » et « calendar.sync » jamais émis
 **Fichiers :** `app/api/study-sheets/route.ts`, `app/api/calendar/sync/route.ts`
 Ajout des appels `auditLog(...)` correspondants aux actions de la légende.
+
+---
+
+## M01 à M06 — intégrité métier, calendrier et fichiers
+
+**Fichiers modifiés :** routes Évaluations, Fiches et Calendrier, `services/automation.ts`, espace Cours, `proxy.ts`.
+
+- Les chapitres d'une évaluation doivent appartenir à sa matière.
+- Une fiche valide maintenant son chapitre dans le bon compte et la bonne matière, y compris lorsqu'elle est générée par un job.
+- Les événements importés de Google ne sont plus supprimables localement : l'interface indique leur origine et l'API répond 409 pour empêcher leur réapparition silencieuse.
+- Une erreur de régénération de plan après déplacement d'une évaluation est maintenant renvoyée au client, au lieu d'être ignorée.
+- Les documents importés ont une route de téléchargement authentifiée et un lien « Fichier » dans la liste des cours.
+
+> M06 (rate limit) reste à traiter séparément : `proxy.ts` contient une modification non committée préexistante qui doit être préservée.

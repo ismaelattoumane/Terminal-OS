@@ -134,6 +134,7 @@ async function handleGenerateStudySheet(userId: string, payload: Record<string, 
   if (typeof subjectId !== "string" || !Array.isArray(courseIds) || !courseIds.every((id): id is string => typeof id === "string")) throw new Error("subjectId et courseIds requis");
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "Fiche de révision";
   const chapterId = typeof payload.chapterId === "string" ? payload.chapterId : null;
+  if (chapterId && !(await prisma.chapter.findFirst({ where: { id: chapterId, userId, subjectId }, select: { id: true } }))) throw new Error("Chapitre introuvable pour cette matière");
   const courses = await prisma.course.findMany({ where: { id: { in: courseIds }, userId, subjectId }, select: { id: true, content: true } });
   if (courses.length !== courseIds.length) throw new Error("Cours introuvables pour ce compte");
   const content = await getAIProvider().generateStudySheet(courses.map((course) => course.content ?? "").join("\n").slice(0, 40000));

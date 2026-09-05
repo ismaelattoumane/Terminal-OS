@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   const session = await getServerSession(authOptions); if (!session?.user?.email) return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
   const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } }); if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 401 });
   const parsed = schema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ error: "Données invalides", details: parsed.error.flatten() }, { status: 400 });
+  if (parsed.data.chapterId && !(await prisma.chapter.findFirst({ where: { id: parsed.data.chapterId, userId: user.id, subjectId: parsed.data.subjectId }, select: { id: true } }))) return NextResponse.json({ error: "Chapitre introuvable pour cette matière" }, { status: 404 });
   const courses = await prisma.course.findMany({ where: { id: { in: parsed.data.courseIds }, userId: user.id, subjectId: parsed.data.subjectId }, select: { id: true, content: true } });
   if (courses.length !== parsed.data.courseIds.length) return NextResponse.json({ error: "Cours introuvables" }, { status: 404 });
   const content = await getAIProvider().generateStudySheet(courses.map((course) => course.content ?? "").join("\n"));

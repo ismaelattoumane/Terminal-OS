@@ -12,6 +12,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { id } = await context.params;
   const existing = await prisma.event.findFirst({ where: { id, userId: user.id }, select: { id: true, source: true } });
   if (!existing) return NextResponse.json({ error: "Événement introuvable" }, { status: 404 });
+  if (existing.source === "google") return NextResponse.json({ error: "Supprime cet événement depuis Google Calendar ; il sera ensuite retiré lors de la synchronisation." }, { status: 409 });
   await prisma.event.delete({ where: { id } });
   return new NextResponse(null, { status: 204 });
 }
