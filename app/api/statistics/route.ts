@@ -2,7 +2,6 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { weightedAverageOn20 } from "@/services/grades";
 
 function startOfDay(value: Date) { return new Date(value.getFullYear(), value.getMonth(), value.getDate()); }
 function mondayOf(value: Date) { const day = startOfDay(value); const offset = (day.getDay() + 6) % 7; day.setDate(day.getDate() - offset); return day; }
@@ -47,12 +46,6 @@ export async function GET() {
     return { weekStart: weekStart.toISOString().slice(0, 10), count: weekSessions.length, plannedMinutes: weekSessions.reduce((sum, revision) => sum + (revision.status === "planned" ? revision.duration : 0), 0), completedMinutes: weekSessions.reduce((sum, revision) => sum + (revision.status === "completed" ? revision.duration : 0), 0) };
   });
 
-  // B24 : charge de travail réelle (sessions planifiées) par matière au lieu de 0.
-  const workloadBySubject = subjects.map((subject) => {
-    const planned = revisions.filter((revision) => revision.subjectId === subject.id && revision.status === "planned");
-    return { id: subject.id, name: subject.name, plannedMinutes: planned.reduce((sum, revision) => sum + revision.duration, 0), sessionCount: planned.length };
-  });
-
   return NextResponse.json(
     {
       summary: { averageGrade, averageMastery, weakChapters, totalSessions: revisions.length, completedSessions: revisions.filter((revision) => revision.status === "completed").length, quizCount: quizAttempts.length, flashcardCount, sheetCount, gradeCount: grades.length },
@@ -60,7 +53,6 @@ export async function GET() {
       masteryBySubject,
       quizTrend: quizAttempts.map((attempt) => ({ date: attempt.date, chapter: attempt.chapter.name, subject: attempt.subject?.name ?? null, score: attempt.score })),
       sessionsPerWeek,
-      workloadBySubject,
     },
     { headers: { "Cache-Control": "private, no-store" } },
   );

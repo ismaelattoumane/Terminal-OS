@@ -1,5 +1,4 @@
-import { signIn } from "next-auth/react";
-import { ArrowRight, Terminal } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { LoginButton } from "./login-button";
 
 // Rendu côté serveur pour détecter la config Google.

@@ -9,8 +9,8 @@
 | 🔴 | 0 |
 | 🟠 | 0 |
 | 🟡 | 1 |
-| 🔵 | 4 |
-| **Total** | **5** |
+| 🔵 | 0 |
+| **Total** | **1** |
 
 ## 🔴 Critique
 
@@ -99,7 +99,9 @@ D01, D02, D04 et D05 sont corrigés dans `fix(modéré): fiabiliser les données
 - **Preuve :** les docs promettent uptime, mémoire et S3 en public, mais la route publique ne renvoie plus que statut/base/timestamp. Le détail requiert `detailed=1` et `CRON_SECRET`.
 - **Correctif :** documenter les deux réponses et recommander le header `x-health-secret`, pas le secret dans l'URL.
 
-## 🔵 Mineurs
+## 🔵 Mineurs — corrigés
+
+Q01 à Q04 sont corrigés dans `fix(mineur): nettoyer la qualité et le déploiement`.
 
 ### Q01 — Six avertissements ESLint
 

@@ -35,3 +35,12 @@ Les mutations du calendrier (créer/supprimer un événement, créer/supprimer u
 ## B42 — Dates d'édition d'évaluation : `date.slice(0,10)` dépend du fuseau
 **Fichier modifié :** `components/phase-one-workspace.tsx`
 Ajout d'un helper `toLocalDateInput(iso)` qui formate en `YYYY-MM-DD` **local** (pas UTC) pour les `<input type="date">`, évitant le décalage d'un jour dans les fuseaux négatifs.
+
+---
+
+## Q01 à Q04 — qualité finale
+
+- Les six imports/paramètres inutilisés ESLint ont été retirés.
+- Un Dockerfile multi-stage rend la procédure `docker build` documentée réellement exécutable.
+- Le payload `workloadBySubject`, jamais consommé, est supprimé de l'API Statistiques.
+- Les imports déclenchés par `GET /api/calendar/sync` sont maintenant journalisés.

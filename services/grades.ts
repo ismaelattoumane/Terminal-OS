@@ -1,5 +1,3 @@
-import { prisma } from "@/lib/prisma";
-
 export type Gradable = { grade: number; maxGrade: number; coefficient: number };
 
 /**

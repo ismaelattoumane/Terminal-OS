@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { ArrowRight, Terminal } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 // Bouton client séparé : signIn de next-auth/react utilise des API client
 // (CSRF, navigation) et ne peut pas s'exécuter dans un composant serveur.
