@@ -3,6 +3,9 @@ import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "@/lib/prisma";
 
 export const authOptions: NextAuthOptions = {
+  // next-auth v4 lit uniquement NEXTAUTH_SECRET (pas AUTH_SECRET, nom v5) :
+  // sans cette clé, MissingSecret est levée en production (B01).
+  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   providers: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? [GoogleProvider({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET, authorization: { params: { scope: "openid email profile https://www.googleapis.com/auth/calendar.events", access_type: "offline", prompt: "consent" } } })]

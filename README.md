@@ -26,7 +26,7 @@ Prerequis : Node.js 20+, npm, Docker et Docker Compose (ou une instance PostgreS
 ```bash
 npm install
 cp .env.example .env
-# renseigner DATABASE_URL et AUTH_SECRET dans .env
+# renseigner DATABASE_URL et NEXTAUTH_SECRET dans .env
 npm run db:up
 npm run db:generate
 npm run db:migrate
@@ -42,7 +42,7 @@ Application locale : http://localhost:3000
 Voir `.env.example`. Les secrets ne doivent jamais etre commits.
 
 - `DATABASE_URL` : connexion PostgreSQL.
-- `AUTH_SECRET` : secret de session aleatoire en production.
+- `NEXTAUTH_SECRET` : secret de session aleatoire en production (lu par next-auth v4 ; `AUTH_SECRET` n'est pas utilisé).
 - `NEXTAUTH_URL` : URL publique de l'application utilisée par Auth.js.
 - `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` : activent la connexion Google.
 - `GOOGLE_REDIRECT_URI` : URI de callback OAuth, à déclarer exactement dans Google Cloud Console.

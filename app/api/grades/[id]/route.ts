@@ -3,9 +3,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { regenerateRevisionPlan } from "@/services/automation";
 
-const updateSchema = z.object({ title: z.string().trim().min(1).max(120).optional(), date: z.coerce.date().optional(), status: z.enum(["planned", "completed", "cancelled"]).optional(), description: z.string().max(2000).nullable().optional() }).strict();
+const updateSchema = z.object({
+  grade: z.number().min(0).optional(),
+  maxGrade: z.number().positive().optional(),
+  coefficient: z.number().positive().max(100).optional(),
+  date: z.coerce.date().optional(),
+  comment: z.string().trim().max(500).nullable().optional(),
+}).strict();
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -15,16 +20,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   const parsed = updateSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Données invalides", details: parsed.error.flatten() }, { status: 400 });
-  const existing = await prisma.evaluation.findFirst({ where: { id, userId: user.id } });
-  if (!existing) return NextResponse.json({ error: "Évaluation introuvable" }, { status: 404 });
-  const evaluation = await prisma.evaluation.update({ where: { id }, data: parsed.data });
-  if (parsed.data.date && parsed.data.date.getTime() !== existing.date.getTime()) {
-    // B03 : la date change => les anciennes sessions planifiées sont supprimées
-    // PUIS le plan est régénéré avec les chapitres liés à l'évaluation.
-    await prisma.revisionSession.deleteMany({ where: { evaluationId: id, status: "planned" } });
-    try { await regenerateRevisionPlan(user.id, id); } catch { /* plan régénérable depuis les Automatisations */ }
-  }
-  return NextResponse.json(evaluation);
+  const existing = await prisma.grade.findFirst({ where: { id, userId: user.id }, select: { id: true, grade: true, maxGrade: true } });
+  if (!existing) return NextResponse.json({ error: "Note introuvable" }, { status: 404 });
+  const nextGrade = parsed.data.grade ?? existing.grade;
+  const nextMax = parsed.data.maxGrade ?? existing.maxGrade;
+  if (nextGrade > nextMax) return NextResponse.json({ error: "La note dépasse le barème" }, { status: 400 });
+  const grade = await prisma.grade.update({ where: { id }, data: parsed.data });
+  return NextResponse.json(grade);
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -33,8 +35,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
   if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 401 });
   const { id } = await context.params;
-  const existing = await prisma.evaluation.findFirst({ where: { id, userId: user.id }, select: { id: true } });
-  if (!existing) return NextResponse.json({ error: "Évaluation introuvable" }, { status: 404 });
-  await prisma.evaluation.delete({ where: { id } });
+  const existing = await prisma.grade.findFirst({ where: { id, userId: user.id }, select: { id: true } });
+  if (!existing) return NextResponse.json({ error: "Note introuvable" }, { status: 404 });
+  await prisma.grade.delete({ where: { id } });
   return new NextResponse(null, { status: 204 });
 }

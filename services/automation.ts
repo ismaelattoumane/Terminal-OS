@@ -32,6 +32,14 @@ export async function retryJob(userId: string, jobId: string) {
   return prisma.automationJob.update({ where: { id: job.id }, data: { status: "pending", attempts: Math.max(1, job.attempts) } });
 }
 
+/**
+ * Régénère le plan de révision d'une évaluation existante (B03) : utilisé quand
+ * la date d'un contrôle change, après suppression des sessions planifiées.
+ */
+export async function regenerateRevisionPlan(userId: string, evaluationId: string) {
+  await handleCreateRevisionPlan(userId, { evaluationId });
+}
+
 async function runHandler(type: JobType, userId: string, payload: unknown) {
   const data = payload as Record<string, unknown>;
   switch (type) {

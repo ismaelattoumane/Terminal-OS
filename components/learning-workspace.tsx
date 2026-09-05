@@ -5,7 +5,7 @@ import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
 
 type Subject = { id: string; name: string };
 type Chapter = { id: string; name: string; subjectId: string };
-type Course = { id: string; title: string; subjectId: string };
+type Course = { id: string; title: string; subjectId: string; chapterId: string | null };
 type SheetContent = { summary?: string; keyIdeas?: string[]; definitions?: string[]; formulas?: string[]; methods?: string[]; commonMistakes?: string[]; examples?: string[]; takeaways?: string[] };
 type Sheet = { id: string; title: string; content: SheetContent; createdAt: string };
 type Card = { id: string; question: string; answer: string; chapterId: string; nextReview: string };
@@ -68,6 +68,21 @@ async function generateSheet(event: FormEvent) {
   async function reviewCard(id: string, quality: 1 | 2 | 3) {
     const response = await fetch(`/api/flashcards/${id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) });
     if (response.ok) { setRevealed(null); await load(); }
+    else setFeedback("Action impossible. Vérifie ta connexion.");
+  }
+
+  // B05 : création manuelle ou génération IA de flashcards via POST /api/flashcards.
+  async function createCard(payload: { chapterId: string; courseId?: string; question?: string; answer?: string }) {
+    if (!payload.chapterId) { setFeedback("Choisis un chapitre."); return; }
+    if (!payload.question !== !payload.answer) { setFeedback("Remplis question ET réponse, ou laisse les deux vides pour générer."); return; }
+    if (!payload.question && !payload.courseId) { setFeedback("Choisis un cours à partir duquel générer, ou saisis question et réponse."); return; }
+    setBusy(true);
+    try {
+      const response = await fetch("/api/flashcards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chapterId: payload.chapterId, courseId: payload.courseId || undefined, question: payload.question || undefined, answer: payload.answer || undefined }) });
+      if (!response.ok) { const data = await response.json().catch(() => null); setFeedback((data as { error?: string } | null)?.error ?? "Création impossible."); return; }
+      setFeedback("Flashcard(s) ajoutée(s).");
+      await load();
+    } finally { setBusy(false); }
   }
 
   function toggleCourse(id: string) {
@@ -88,7 +103,7 @@ async function generateSheet(event: FormEvent) {
         {feedback && <span className="workspace-message">{feedback}</span>}
       </div>
       {mode === "sheets" && <SheetManager subjects={subjects} chapters={chapters} courses={courses} sheets={sheets} subjectId={subjectId} setSubjectId={setSubjectId} chapterId={chapterId} setChapterId={setChapterId} courseIds={courseIds} toggleCourse={toggleCourse} generateSheet={generateSheet} deleteSheet={deleteSheet} busy={busy} expandedSheet={expandedSheet} setExpandedSheet={setExpandedSheet} />}
-      {mode === "flashcards" && <FlashcardManager cards={cards} revealed={revealed} setRevealed={setRevealed} reviewCard={reviewCard} />}
+      {mode === "flashcards" && <FlashcardManager cards={cards} subjects={subjects} chapters={chapters} courses={courses} onGenerate={createCard} busy={busy} revealed={revealed} setRevealed={setRevealed} reviewCard={reviewCard} />}
       {mode === "quiz" && <QuizManager subjects={subjects} chapters={chapters} courses={courses} subjectId={subjectId} setSubjectId={setSubjectId} chapterId={chapterId} setChapterId={setChapterId} setCourseId={(courseId: string) => setCourseIds(courseId ? [courseId] : [])} courseId={courseIds[0] ?? ""} />}
     </div>
   );
@@ -169,24 +184,63 @@ function SheetDetail({ content }: { content: SheetContent }) {
     </div>
   );
 }
-function FlashcardManager({ cards, revealed, setRevealed, reviewCard }: { cards: Card[]; revealed: string | null; setRevealed: (id: string | null) => void; reviewCard: (id: string, quality: 1 | 2 | 3) => Promise<void> }) {
+function FlashcardManager({ cards, subjects, chapters, courses, onGenerate, busy, revealed, setRevealed, reviewCard }: { cards: Card[]; subjects: Subject[]; chapters: Chapter[]; courses: Course[]; onGenerate: (payload: { chapterId: string; courseId?: string; question?: string; answer?: string }) => Promise<void>; busy: boolean; revealed: string | null; setRevealed: (id: string | null) => void; reviewCard: (id: string, quality: 1 | 2 | 3) => Promise<void> }) {
+  const [subjectId, setSubjectId] = useState("");
+  const [chapterId, setChapterId] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const filteredChapters = chapters.filter((chapter) => !subjectId || chapter.subjectId === subjectId);
+  const filteredCourses = courses.filter((course) => course.subjectId === subjectId && (!chapterId || course.chapterId === chapterId));
+  function changeSubject(value: string) { setSubjectId(value); setChapterId(""); setCourseId(""); }
   return (
-    <section className="data-list">
-      <div className="list-heading"><h2>À réviser maintenant</h2><span>{cards.length}</span></div>
-      {cards.length ? cards.map((card) => (
-        <article className="flashcard" key={card.id}>
-          <button className="flashcard-question" onClick={() => setRevealed(revealed === card.id ? null : card.id)}>{card.question}</button>
-          {revealed === card.id && <>
-            <p className="flashcard-answer">{card.answer}</p>
-            <div className="item-actions">
-              <button className="skip-button" onClick={() => reviewCard(card.id, 1)}>Difficile</button>
-              <button className="skip-button" onClick={() => reviewCard(card.id, 2)}>Moyen</button>
-              <button className="complete-button" onClick={() => reviewCard(card.id, 3)}><Check size={14} /> Facile</button>
-            </div>
-          </>}
-        </article>
-      )) : <p className="empty-state">Aucune carte à réviser pour le moment.</p>}
-    </section>
+    <>
+      <form className="data-form wide-form" onSubmit={(event) => { event.preventDefault(); void onGenerate({ chapterId, courseId, question: question.trim() || undefined, answer: answer.trim() || undefined }).then(() => { setQuestion(""); setAnswer(""); }); }}>
+        <h2 className="form-title">Nouvelles flashcards</h2>
+        <div className="form-row">
+          <label>Matière
+            <select value={subjectId} onChange={(event) => changeSubject(event.target.value)} required>
+              <option value="">Choisir</option>
+              {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+            </select>
+          </label>
+          <label>Chapitre
+            <select value={chapterId} onChange={(event) => { setChapterId(event.target.value); setCourseId(""); }} required>
+              <option value="">Choisir</option>
+              {filteredChapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.name}</option>)}
+            </select>
+          </label>
+          <label>Cours (pour générer)
+            <select value={courseId} onChange={(event) => setCourseId(event.target.value)}>
+              <option value="">Aucun</option>
+              {filteredCourses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="form-row">
+          <label>Question<input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Optionnel si un cours est choisi" /></label>
+          <label>Réponse<input value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Optionnel si un cours est choisi" /></label>
+        </div>
+        <p className="muted">Laisse question et réponse vides pour générer automatiquement des cartes depuis le cours choisi.</p>
+        <button className="primary-button" type="submit" disabled={busy}>{busy ? "Création…" : <><Plus size={16} /> Créer / générer</>}</button>
+      </form>
+      <section className="data-list">
+        <div className="list-heading"><h2>À réviser maintenant</h2><span>{cards.length}</span></div>
+        {cards.length ? cards.map((card) => (
+          <article className="flashcard" key={card.id}>
+            <button className="flashcard-question" onClick={() => setRevealed(revealed === card.id ? null : card.id)}>{card.question}</button>
+            {revealed === card.id && <>
+              <p className="flashcard-answer">{card.answer}</p>
+              <div className="item-actions">
+                <button className="skip-button" onClick={() => reviewCard(card.id, 1)}>Difficile</button>
+                <button className="skip-button" onClick={() => reviewCard(card.id, 2)}>Moyen</button>
+                <button className="complete-button" onClick={() => reviewCard(card.id, 3)}><Check size={14} /> Facile</button>
+              </div>
+            </>}
+          </article>
+        )) : <p className="empty-state">Aucune carte à réviser pour le moment. Crée-en ci-dessus.</p>}
+      </section>
+    </>
   );
 }
 
@@ -198,7 +252,9 @@ function QuizManager({ subjects, chapters, courses, subjectId, setSubjectId, cha
   const [result, setResult] = useState<{ score: number; correct: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const filteredCourses = courses.filter((course) => !subjectId || course.subjectId === subjectId);
+  // B04 : l'API /api/quizzes exige que le cours appartienne au chapitre choisi,
+  // on filtre donc les cours par chapitre (et pas seulement par matière).
+  const filteredCourses = courses.filter((course) => course.subjectId === subjectId && (!chapterId || course.chapterId === chapterId));
   const filteredChapters = chapters.filter((chapter) => !subjectId || chapter.subjectId === subjectId);
 
   async function startQuiz() {

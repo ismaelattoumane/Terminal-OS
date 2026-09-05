@@ -45,6 +45,7 @@ export function PhaseOneWorkspace({ section }: { section: string }) {
   if (section === "Cours") return <CourseManager subjects={subjects} chapters={chapters} courses={courses} create={create} remove={remove} message={message} />;
   if (section === "Évaluations") return <EvaluationManager subjects={subjects} chapters={chapters} evaluations={evaluations} create={create} remove={remove} update={update} message={message} />;
   if (section === "Révisions") return <RevisionManager message={message} />;
+  if (section === "Devoirs & notes") return <HomeworkGradeManager subjects={subjects} create={create} remove={remove} update={update} message={message} />;
   return <SubjectManager subjects={subjects} chapters={chapters} create={create} remove={remove} message={message} />;
 }
 
@@ -86,4 +87,74 @@ function RevisionManager({ message }: { message: string }) {
 }
 function Workspace({ title, intro, message, children }: { title: string; intro: string; message: string; children: React.ReactNode }) { return <div className="workspace-page"><div className="workspace-heading"><div><p className="eyebrow">PHASE 1 · ESPACE DE TRAVAIL</p><h1>{title}</h1><p className="muted">{intro}</p></div>{message && <span className="workspace-message">{message}</span>}</div>{children}</div>; }
 function FormTitle({ title }: { title: string }) { return <h2 className="form-title">{title}</h2>; }
+
+type HomeworkItem = { id: string; title: string; dueDate: string; status: string; estimatedDuration: number; priority: string; subject: { name: string } };
+type GradeItem = { id: string; grade: number; maxGrade: number; coefficient: number; date: string; comment: string | null; subject: { name: string } };
+
+function HomeworkGradeManager({ subjects, create, remove, update, message }: { subjects: Subject[]; create: (path: string, payload: object) => Promise<void>; remove: (path: string) => Promise<void>; update: (path: string, payload: object) => Promise<void>; message: string }) {
+  const [homework, setHomework] = useState<HomeworkItem[]>([]);
+  const [grades, setGrades] = useState<GradeItem[]>([]);
+  const [feedback, setFeedback] = useState(message);
+  const [title, setTitle] = useState(""); const [subjectId, setSubjectId] = useState(""); const [dueDate, setDueDate] = useState(""); const [duration, setDuration] = useState(30); const [priority, setPriority] = useState("normal");
+  const [gradeValue, setGradeValue] = useState(""); const [gradeSubjectId, setGradeSubjectId] = useState(""); const [maxGrade, setMaxGrade] = useState(20); const [coefficient, setCoefficient] = useState(1); const [gradeDate, setGradeDate] = useState(""); const [comment, setComment] = useState("");
+  async function load() {
+    const [homeworkResponse, gradeResponse] = await Promise.all([fetch("/api/homework"), fetch("/api/grades")]);
+    if (homeworkResponse.ok) setHomework(await homeworkResponse.json());
+    if (gradeResponse.ok) setGrades(await gradeResponse.json());
+  }
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetch("/api/homework"), fetch("/api/grades")]).then(async ([homeworkResponse, gradeResponse]) => {
+      const homeworkData = homeworkResponse.ok ? await homeworkResponse.json() : [];
+      const gradeData = gradeResponse.ok ? await gradeResponse.json() : [];
+      if (!cancelled) startTransition(() => { setHomework(homeworkData); setGrades(gradeData); });
+    }).catch(() => { if (!cancelled) setFeedback("Connecte-toi pour gérer devoirs et notes."); });
+    return () => { cancelled = true; };
+  }, []);
+  async function submitHomework(event: FormEvent) {
+    event.preventDefault();
+    await create("/api/homework", { title, subjectId, dueDate, estimatedDuration: duration, priority });
+    setTitle(""); setDueDate(""); await load();
+  }
+  async function submitGrade(event: FormEvent) {
+    event.preventDefault();
+    await create("/api/grades", { subjectId: gradeSubjectId, grade: Number(gradeValue), maxGrade, coefficient, date: gradeDate || new Date().toISOString(), comment: comment || undefined });
+    setGradeValue(""); setComment(""); await load();
+  }
+  async function completeHomework(id: string) { await update(`/api/homework/${id}`, { status: "completed" }); await load(); }
+  const homeworkItems = homework.map((item) => ({
+    id: item.id,
+    title: item.title,
+    meta: `${item.subject.name} · ${new Date(item.dueDate).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} · ${item.estimatedDuration} min · ${item.status}`,
+    secondaryAction: item.status !== "completed" ? () => completeHomework(item.id) : undefined,
+    secondaryLabel: "Terminer",
+    action: () => remove(`/api/homework/${item.id}`),
+  }));
+  const gradeItems = grades.map((item) => ({
+    id: item.id,
+    title: `${item.grade}/${item.maxGrade}`,
+    meta: `${item.subject.name} · coef ${item.coefficient} · ${new Date(item.date).toLocaleDateString("fr-FR")}${item.comment ? ` · ${item.comment}` : ""}`,
+    action: () => remove(`/api/grades/${item.id}`),
+  }));
+  return <Workspace title="Devoirs & notes" intro="Note tes devoirs à rendre et tes notes pour alimenter le tableau de bord." message={message || feedback}>
+    <div className="manager-grid">
+      <form className="data-form" onSubmit={submitHomework}><FormTitle title="Nouveau devoir" />
+        <label>Intitulé<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Exercices 12 à 15 p.84" required /></label>
+        <label>Matière<select value={subjectId} onChange={(event) => setSubjectId(event.target.value)} required><option value="">Choisir</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+        <label>À rendre le<input type="datetime-local" value={dueDate} onChange={(event) => setDueDate(event.target.value)} required /></label>
+        <div className="form-row"><label>Durée (min)<input type="number" min={5} max={600} step={5} value={duration} onChange={(event) => setDuration(Number(event.target.value))} /></label><label>Priorité<select value={priority} onChange={(event) => setPriority(event.target.value)} aria-label="Priorité"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="critical">Critique</option></select></label></div>
+        <button className="primary-button" type="submit"><Plus size={16} /> Ajouter le devoir</button>
+      </form>
+      <form className="data-form" onSubmit={submitGrade}><FormTitle title="Nouvelle note" />
+        <label>Matière<select value={gradeSubjectId} onChange={(event) => setGradeSubjectId(event.target.value)} required><option value="">Choisir</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+        <div className="form-row"><label>Note<input type="number" min={0} step={0.25} value={gradeValue} onChange={(event) => setGradeValue(event.target.value)} placeholder="15.5" required /></label><label>Barème<input type="number" min={1} step={1} value={maxGrade} onChange={(event) => setMaxGrade(Number(event.target.value))} required /></label><label>Coef<input type="number" min={0.5} step={0.5} value={coefficient} onChange={(event) => setCoefficient(Number(event.target.value))} required /></label></div>
+        <label>Date<input type="date" value={gradeDate} onChange={(event) => setGradeDate(event.target.value)} /></label>
+        <label>Commentaire<input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Contrôle chapitre 2" /></label>
+        <button className="primary-button" type="submit"><Plus size={16} /> Ajouter la note</button>
+      </form>
+    </div>
+    <DataList title="Devoirs à rendre" empty="Aucun devoir enregistré." items={homeworkItems} />
+    <DataList title="Notes" empty="Aucune note enregistrée." items={gradeItems} />
+  </Workspace>;
+}
 function DataList({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string; action: () => void; secondaryAction?: () => void; secondaryLabel?: string; cancelAction?: () => void; editAction?: () => void }> }) { return <section className="data-list"><div className="list-heading"><h2>{title}</h2><span>{items.length}</span></div>{items.length ? items.map((item) => <div className="data-item" key={item.id}><div><strong>{item.title}</strong><span>{item.meta}</span></div><div className="item-actions">{item.editAction && <button className="skip-button" onClick={item.editAction}>Modifier</button>}{item.secondaryAction && <button className="complete-button" onClick={item.secondaryAction}>{item.secondaryLabel}</button>}{item.cancelAction && <button className="skip-button" onClick={item.cancelAction}>Annuler</button>}<button className="delete-button" onClick={item.action} aria-label={`Supprimer ${item.title}`}><Trash2 size={15} /></button></div></div>) : <p className="empty-state">{empty}</p>}</section>; }

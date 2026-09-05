@@ -14,7 +14,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard }, { label: "Cours", icon: BookOpen }, { label: "Évaluations", icon: ClipboardCheck },
   { label: "Révisions", icon: AlarmClock }, { label: "Calendrier", icon: CalendarDays }, { label: "Fiches", icon: Sparkles },
   { label: "Flashcards", icon: Target }, { label: "Quiz", icon: Check }, { label: "Statistiques", icon: LineChart },
-  { label: "Automatisations", icon: Workflow },
+  { label: "Automatisations", icon: Workflow }, { label: "Devoirs & notes", icon: ClipboardCheck },
 ];
 const sessions = [
   { time: "17:30", title: "Suites numériques", meta: "Maths · Exercices", tone: "orange", duration: "40 min" },

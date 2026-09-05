@@ -20,9 +20,8 @@ Sur un fournisseur cloud :
 | Variable | Obligatoire | But |
 | --- | --- | --- |
 | `DATABASE_URL` | oui | Connexion PostgreSQL managée (SSL recommandé). |
-| `AUTH_SECRET` | oui | Secret de session (générer avec `openssl rand -base64 32`). |
+| `NEXTAUTH_SECRET` | oui | Secret de session lu par next-auth v4 (générer avec `openssl rand -base64 32`). `AUTH_SECRET` n'est pas lu par next-auth v4. |
 | `NEXTAUTH_URL` | oui | URL publique de l'application. |
-| `NEXTAUTH_SECRET` | recommandé | Alias de `AUTH_SECRET` pour les plateformes Vercel. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | si Google | Connexion Google + Calendar. |
 | `GOOGLE_REDIRECT_URI` | si Google | URI de callback, déclarée dans la Google Cloud Console. |
 | `CALENDAR_TIMEZONE` | non | Fuseau des événements Google (défaut `Europe/Paris`). |
