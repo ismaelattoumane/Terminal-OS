@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { importGoogleCalendarEvents, syncRevisionToGoogleCalendar } from "@/services/calendar";
+import { auditLog } from "@/lib/audit";
 
 export async function POST() {
   const session = await getServerSession(authOptions);
@@ -14,6 +15,8 @@ export async function POST() {
   const synced: string[] = [];
   for (const revision of revisions) synced.push(await syncRevisionToGoogleCalendar(session.googleAccessToken, revision.id, user.id));
   const imported = await importGoogleCalendarEvents(session.googleAccessToken, user.id, new Date());
+  // B22 : l'action « calendar.sync » de la légende du journal d'audit existe désormais réellement.
+  await auditLog(user.id, "calendar.sync", { synced: synced.length, imported });
   return NextResponse.json({ synced: synced.length, imported, eventIds: synced });
 }
 

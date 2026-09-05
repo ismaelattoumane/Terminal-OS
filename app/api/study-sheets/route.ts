@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAIProvider } from "@/services/ai";
 import { getPagination, totalHeader } from "@/lib/pagination";
+import { auditLog } from "@/lib/audit";
 
 const schema = z.object({ subjectId: z.string().cuid(), chapterId: z.string().cuid().optional(), courseIds: z.array(z.string().cuid()).min(1), title: z.string().trim().min(1).max(160) });
 export async function POST(request: Request) {
@@ -15,6 +16,8 @@ export async function POST(request: Request) {
   if (courses.length !== parsed.data.courseIds.length) return NextResponse.json({ error: "Cours introuvables" }, { status: 404 });
   const content = await getAIProvider().generateStudySheet(courses.map((course) => course.content ?? "").join("\n"));
   const sheet = await prisma.studySheet.create({ data: { userId: user.id, subjectId: parsed.data.subjectId, chapterId: parsed.data.chapterId, title: parsed.data.title, sourceCourseIds: parsed.data.courseIds, content } });
+  // B22 : l'action « sheet.generate » de la légende du journal d'audit existe désormais réellement.
+  await auditLog(user.id, "sheet.generate", { sheetId: sheet.id, courseCount: parsed.data.courseIds.length, title: sheet.title });
   return NextResponse.json(sheet, { status: 201 });
 }
 

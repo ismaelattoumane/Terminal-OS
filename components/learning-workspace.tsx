@@ -2,6 +2,7 @@
 
 import { FormEvent, startTransition, useEffect, useState } from "react";
 import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { answersMatch } from "@/lib/answer-matching";
 
 type Subject = { id: string; name: string };
 type Chapter = { id: string; name: string; subjectId: string };
@@ -60,6 +61,7 @@ async function generateSheet(event: FormEvent) {
   }
 
   async function deleteSheet(id: string) {
+    if (!window.confirm("Supprimer cette fiche ? Cette action est définitive.")) return;
     const response = await fetch(`/api/study-sheets/${id}`, { method: "DELETE" });
     setFeedback(response.ok ? "Fiche supprimée." : "Suppression impossible.");
     if (response.ok) await load();
@@ -89,6 +91,11 @@ async function generateSheet(event: FormEvent) {
     setCourseIds((current) => current.includes(id) ? current.filter((courseId) => courseId !== id) : [...current, id]);
   }
 
+  // B14 : changer de matière vide le chapitre et les cours cochés (sinon 404 côté API).
+  function changeSubject(value: string) {
+    startTransition(() => { setSubjectId(value); setChapterId(""); setCourseIds([]); });
+  }
+
   const subtitle = mode === "sheets" ? "Transforme tes cours en synthèses exploitables." : mode === "flashcards" ? "Révise avec une répétition espacée simple." : "Auto-évalue-toi : chaque tentative nourrit ta maîtrise.";
   const title = mode === "sheets" ? "Fiches de révision" : mode === "flashcards" ? "Flashcards" : "Quiz d'auto-évaluation";
 
@@ -102,7 +109,7 @@ async function generateSheet(event: FormEvent) {
         </div>
         {feedback && <span className="workspace-message">{feedback}</span>}
       </div>
-      {mode === "sheets" && <SheetManager subjects={subjects} chapters={chapters} courses={courses} sheets={sheets} subjectId={subjectId} setSubjectId={setSubjectId} chapterId={chapterId} setChapterId={setChapterId} courseIds={courseIds} toggleCourse={toggleCourse} generateSheet={generateSheet} deleteSheet={deleteSheet} busy={busy} expandedSheet={expandedSheet} setExpandedSheet={setExpandedSheet} />}
+      {mode === "sheets" && <SheetManager subjects={subjects} chapters={chapters} courses={courses} sheets={sheets} subjectId={subjectId} setSubjectId={changeSubject} chapterId={chapterId} setChapterId={setChapterId} courseIds={courseIds} toggleCourse={toggleCourse} generateSheet={generateSheet} deleteSheet={deleteSheet} busy={busy} expandedSheet={expandedSheet} setExpandedSheet={setExpandedSheet} />}
       {mode === "flashcards" && <FlashcardManager cards={cards} subjects={subjects} chapters={chapters} courses={courses} onGenerate={createCard} busy={busy} revealed={revealed} setRevealed={setRevealed} reviewCard={reviewCard} />}
       {mode === "quiz" && <QuizManager subjects={subjects} chapters={chapters} courses={courses} subjectId={subjectId} setSubjectId={setSubjectId} chapterId={chapterId} setChapterId={setChapterId} setCourseId={(courseId: string) => setCourseIds(courseId ? [courseId] : [])} courseId={courseIds[0] ?? ""} />}
     </div>
@@ -270,10 +277,13 @@ function QuizManager({ subjects, chapters, courses, subjectId, setSubjectId, cha
 
   async function submitQuiz() {
     if (!questions) return;
+    // B19 : avertir avant de valider avec des réponses vides.
+    if (answers.some((value) => !value?.trim()) && !window.confirm("Certaines réponses sont vides : elles compteront comme fausses. Valider quand même ?")) return;
     const response = await fetch("/api/quizzes/attempt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chapterId, questions, answers }) });
     if (!response.ok) { setFeedback("Tentative non enregistrée."); return; }
     const data = await response.json();
-    const correct = questions.reduce((total, question, index) => total + (question.answer.trim().toLowerCase() === answers[index]?.trim().toLowerCase() ? 1 : 0), 0);
+    // B19 : comparaison normalisée (accents, ponctuation, articles) au lieu du strict trim/toLowerCase.
+    const correct = questions.reduce((total, question, index) => total + (answersMatch(question.answer, answers[index] ?? "") ? 1 : 0), 0);
     setResult({ score: Math.round(data.score * 100), correct, total: questions.length });
     setQuestions(null);
   }

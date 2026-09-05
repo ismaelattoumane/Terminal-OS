@@ -24,6 +24,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     await prisma.revisionSession.deleteMany({ where: { evaluationId: id, status: "planned" } });
     try { await regenerateRevisionPlan(user.id, id); } catch { /* plan régénérable depuis les Automatisations */ }
   }
+  // B15 : terminer ou annuler une évaluation clôt ses sessions de révision.
+  if (parsed.data.status === "completed") await prisma.revisionSession.updateMany({ where: { evaluationId: id, status: "planned" }, data: { status: "completed" } });
+  if (parsed.data.status === "cancelled") await prisma.revisionSession.updateMany({ where: { evaluationId: id, status: "planned" }, data: { status: "skipped" } });
   return NextResponse.json(evaluation);
 }
 
