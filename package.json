@@ -11,6 +11,8 @@
     "db:format": "prisma format",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down"
   },
@@ -24,6 +26,7 @@
     "pdf-parse": "^2.4.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

@@ -111,6 +111,7 @@ model User {
   studySheets    StudySheet[]
   flashcards     Flashcard[]
   quizAttempts   QuizAttempt[]
+  auditLogs      AuditLog[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -362,4 +363,15 @@ model QuizAttempt {
   subjectId String?
 
   @@index([userId, chapterId, date])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  meta      Json
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

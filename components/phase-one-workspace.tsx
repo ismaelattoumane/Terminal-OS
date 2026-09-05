@@ -2,6 +2,7 @@
 
 import { FormEvent, startTransition, useEffect, useState } from "react";
 import { Check, Plus, Trash2 } from "lucide-react";
+import { onReconnect, queuedFetch } from "@/lib/offline-queue";
 
 type Subject = { id: string; name: string; shortName: string; color: string; coefficient: number };
 type Chapter = { id: string; name: string; mastery: number; subject: { name: string }; subjectId: string };
@@ -30,14 +31,16 @@ export function PhaseOneWorkspace({ section }: { section: string }) {
       .catch(() => { if (!cancelled) setMessage("Connecte-toi pour gérer tes données."); });
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => onReconnect(load), []);
 
   async function create(path: string, payload: object) {
-    const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await queuedFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (response.status === 202) { setMessage("Hors ligne : enregistré, synchronisé dès la reconnexion."); return; }
     if (!response.ok) { setMessage("Impossible d'enregistrer. Vérifie ta connexion."); return; }
     setMessage("Enregistré."); await load();
   }
-  async function remove(path: string) { const response = await fetch(path, { method: "DELETE" }); if (response.ok) { setMessage("Supprimé."); await load(); } else setMessage("Suppression impossible."); }
-  async function update(path: string, payload: object) { const response = await fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (response.ok) { setMessage("Mis à jour."); await load(); } else setMessage("Mise à jour impossible."); }
+  async function remove(path: string) { const response = await queuedFetch(path, { method: "DELETE" }); if (response.status === 202) { setMessage("Hors ligne : suppression synchronisée dès la reconnexion."); return; } if (response.ok) { setMessage("Supprimé."); await load(); } else setMessage("Suppression impossible."); }
+  async function update(path: string, payload: object) { const response = await queuedFetch(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (response.status === 202) { setMessage("Hors ligne : mise à jour synchronisée dès la reconnexion."); return; } if (response.ok) { setMessage("Mis à jour."); await load(); } else setMessage("Mise à jour impossible."); }
 
   if (section === "Cours") return <CourseManager subjects={subjects} chapters={chapters} courses={courses} create={create} remove={remove} message={message} />;
   if (section === "Évaluations") return <EvaluationManager subjects={subjects} chapters={chapters} evaluations={evaluations} create={create} remove={remove} update={update} message={message} />;
@@ -78,7 +81,7 @@ function RevisionManager({ message }: { message: string }) {
     fetch("/api/revisions").then((response) => response.ok ? response.json() : []).then((data) => { if (!cancelled) startTransition(() => setRevisions(data)); }).catch(() => { if (!cancelled) setFeedback("Connecte-toi pour voir tes révisions."); });
     return () => { cancelled = true; };
   }, []);
-  async function updateStatus(id: string, status: "completed" | "skipped") { const response = await fetch(`/api/revisions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }); if (response.ok) { setFeedback(status === "completed" ? "Révision terminée." : "Révision ignorée."); await load(); } else setFeedback("Mise à jour impossible."); }
+  async function updateStatus(id: string, status: "completed" | "skipped") { const response = await queuedFetch(`/api/revisions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) }); if (response.status === 202) { setFeedback("Hors ligne : statut synchronisé dès la reconnexion."); return; } if (response.ok) { setFeedback(status === "completed" ? "Révision terminée." : "Révision ignorée."); await load(); } else setFeedback("Mise à jour impossible."); }
   return <Workspace title="Révisions" intro="Ton plan de révision, généré à partir de tes contrôles." message={feedback}><section className="data-list"><div className="list-heading"><h2>Sessions planifiées</h2><span>{revisions.length}</span></div>{revisions.length ? revisions.map((revision) => <div className="data-item" key={revision.id}><div><strong>{revision.title}</strong><span>{new Date(revision.date).toLocaleDateString("fr-FR")} · {revision.status}</span></div><div className="item-actions"><button className="complete-button" onClick={() => updateStatus(revision.id, "completed")} aria-label={`Terminer ${revision.title}`}><Check size={15} /></button><button className="skip-button" onClick={() => updateStatus(revision.id, "skipped")} aria-label={`Ignorer ${revision.title}`}>Ignorer</button></div></div>) : <p className="empty-state">Aucune session pour le moment.</p>}</section></Workspace>;
 }
 function Workspace({ title, intro, message, children }: { title: string; intro: string; message: string; children: React.ReactNode }) { return <div className="workspace-page"><div className="workspace-heading"><div><p className="eyebrow">PHASE 1 · ESPACE DE TRAVAIL</p><h1>{title}</h1><p className="muted">{intro}</p></div>{message && <span className="workspace-message">{message}</span>}</div>{children}</div>; }

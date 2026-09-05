@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPagination, totalHeader } from "@/lib/pagination";
 
 const eventSchema = z.object({ title: z.string().trim().min(1).max(160), start: z.coerce.date(), end: z.coerce.date(), type: z.enum(["school", "personal", "exam", "homework", "revision"]), source: z.enum(["internal", "google", "notion"]).default("internal"), externalId: z.string().max(255).optional() }).refine((value) => value.end > value.start, { message: "La fin doit être après le début", path: ["end"] });
 
@@ -16,8 +17,13 @@ export async function GET(request: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
   const url = new URL(request.url);
-  const events = await prisma.event.findMany({ where: { userId, ...(url.searchParams.get("from") ? { start: { gte: new Date(url.searchParams.get("from")!) } } : {}) }, orderBy: { start: "asc" } });
-  return NextResponse.json(events);
+  const where = { userId, ...(url.searchParams.get("from") ? { start: { gte: new Date(url.searchParams.get("from")!) } } : {}) };
+  const { take, skip } = getPagination(url);
+  const [events, total] = await Promise.all([
+    prisma.event.findMany({ where, orderBy: { start: "asc" }, take, skip }),
+    prisma.event.count({ where }),
+  ]);
+  return NextResponse.json(events, { headers: totalHeader(total) });
 }
 
 export async function POST(request: Request) {

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPagination, totalHeader } from "@/lib/pagination";
 
 const revisionSchema = z.object({
   subjectId: z.string().cuid(),
@@ -27,8 +28,13 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
-  const revisions = await prisma.revisionSession.findMany({ where: { userId: id, ...(from || to ? { date: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}) }, include: { subject: true, chapter: true }, orderBy: [{ date: "asc" }, { startTime: "asc" }] });
-  return NextResponse.json(revisions);
+  const where = { userId: id, ...(from || to ? { date: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}) };
+  const { take, skip } = getPagination(url);
+  const [revisions, total] = await Promise.all([
+    prisma.revisionSession.findMany({ where, include: { subject: true, chapter: true }, orderBy: [{ date: "asc" }, { startTime: "asc" }], take, skip }),
+    prisma.revisionSession.count({ where }),
+  ]);
+  return NextResponse.json(revisions, { headers: totalHeader(total) });
 }
 
 export async function POST(request: Request) {

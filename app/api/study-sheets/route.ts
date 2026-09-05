@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAIProvider } from "@/services/ai";
+import { getPagination, totalHeader } from "@/lib/pagination";
 
 const schema = z.object({ subjectId: z.string().cuid(), chapterId: z.string().cuid().optional(), courseIds: z.array(z.string().cuid()).min(1), title: z.string().trim().min(1).max(160) });
 export async function POST(request: Request) {
@@ -17,4 +18,4 @@ export async function POST(request: Request) {
   return NextResponse.json(sheet, { status: 201 });
 }
 
-export async function GET() { const session = await getServerSession(authOptions); if (!session?.user?.email) return NextResponse.json({ error: "Authentification requise" }, { status: 401 }); const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } }); if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 401 }); return NextResponse.json(await prisma.studySheet.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } })); }
+export async function GET(request: Request) { const session = await getServerSession(authOptions); if (!session?.user?.email) return NextResponse.json({ error: "Authentification requise" }, { status: 401 }); const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } }); if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 401 }); const { take, skip } = getPagination(new URL(request.url)); const [sheets, total] = await Promise.all([prisma.studySheet.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" }, take, skip }), prisma.studySheet.count({ where: { userId: user.id } })]); return NextResponse.json(sheets, { headers: totalHeader(total) }); }

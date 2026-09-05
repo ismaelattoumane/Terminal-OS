@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { deleteCourseFile } from "@/services/storage";
 
 const updateSchema = z.object({
   title: z.string().trim().min(1).max(160).optional(),
@@ -33,8 +34,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
   const { id } = await context.params;
-  const existing = await prisma.course.findFirst({ where: { id, userId }, select: { id: true } });
+  const existing = await prisma.course.findFirst({ where: { id, userId }, select: { id: true, fileUrl: true } });
   if (!existing) return NextResponse.json({ error: "Cours introuvable" }, { status: 404 });
+  await deleteCourseFile(existing.fileUrl);
   await prisma.course.delete({ where: { id } });
   return new NextResponse(null, { status: 204 });
 }

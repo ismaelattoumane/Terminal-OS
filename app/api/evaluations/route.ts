@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createRevisionPlan } from "@/services/revision-planner";
 import { enqueueJob } from "@/services/automation";
+import { getPagination, totalHeader } from "@/lib/pagination";
 
 const evaluationSchema = z.object({
   title: z.string().trim().min(1).max(120), subjectId: z.string().cuid(), date: z.coerce.date(),
@@ -44,8 +45,13 @@ export async function POST(request: Request) {
   return NextResponse.json({ evaluation, revisionSessionsCreated: plan.length }, { status: 201 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
-  return NextResponse.json(await prisma.evaluation.findMany({ where: { userId: user.id }, include: { subject: true, chapters: true, revisions: true }, orderBy: { date: "asc" } }));
+  const { take, skip } = getPagination(new URL(request.url));
+  const [evaluations, total] = await Promise.all([
+    prisma.evaluation.findMany({ where: { userId: user.id }, include: { subject: true, chapters: true, revisions: true }, orderBy: { date: "asc" }, take, skip }),
+    prisma.evaluation.count({ where: { userId: user.id } }),
+  ]);
+  return NextResponse.json(evaluations, { headers: totalHeader(total) });
 }

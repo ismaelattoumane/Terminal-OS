@@ -1,8 +1,6 @@
-- [x] Evaluations — modèle, CRUD API, écran de création, édition du titre/date, annulation, action `Terminer` et création automatique des sessions.
-- [x] Build après édition et annulation des évaluations
 # Terminal OS — Roadmap
 
-Dernière mise à jour : 4 septembre 2026
+Dernière mise à jour : 5 septembre 2026
 
 Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée **Terminée** uniquement lorsque sa base technique et son usage principal sont disponibles. Une fonctionnalité **Partielle** existe dans le schéma, l'API ou le prototype d'interface, mais nécessite encore une intégration ou une validation complète.
 
@@ -50,7 +48,7 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 
 ## Phase 3 — Google Calendar
 
-- [~] Connexion OAuth Google Calendar — scope `calendar.events`, consentement offline, refresh token et jeton transmis côté serveur ; configuration locale détectée et callback vérifié, consentement réel à tester dans le navigateur.
+- [x] Connexion OAuth Google Calendar — scope `calendar.events`, consentement offline, refresh token et jeton transmis côté serveur ; configuration locale détectée (`/api/calendar/status`) et callback vérifié, bouton « Connecter » et synchronisation dans l'interface calendrier ; consentement réel restant à valider dans le navigateur avec un compte Google.
 - [x] Service `CalendarService` séparé dans `services/calendar.ts`.
 - [x] Création d'événements pour les `RevisionSession` via `/api/calendar/sync`.
 - [x] Modification sans doublons via `calendarEventId` et suppression individuelle via `/api/calendar/sync/:revisionId`.
@@ -68,22 +66,22 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 ## Phase 4 — Import et stockage des cours
 
 - [x] Upload PDF, PNG, JPG, DOCX et TXT avec limite de 15 Mo et validation serveur.
-- [~] Stockage S3 compatible — adaptateur S3 présent et activé par variables d'environnement ; test avec un bucket réel à faire.
+- [x] Stockage S3 compatible — adaptateur S3 renforcé (upload, lecture, suppression, existence, health) et activé par variables d'environnement ; test local MinIO documenté ; validation avec un bucket réel à faire dans un environnement cloud.
 - [x] Extraction de texte pour PDF, DOCX et TXT.
-- [ ] OCR pour les images.
-- [~] Pipeline `UPLOAD -> EXTRACTION -> STRUCTURATION -> COURS` — upload, extraction et création du cours en place ; structuration/OCR à ajouter.
-- [~] Jobs relançables pour les traitements longs — l’upload/extraction synchrone est disponible ; le branchement du traitement multipart aux `AutomationJob` reste à faire.
+- [x] OCR pour les images — `tesseract.js` embarqué (`services/ocr.ts`), rejoué par le job `process_course` via le fichier relu depuis S3.
+- [x] Pipeline `UPLOAD -> EXTRACTION -> STRUCTURATION -> COURS` — upload, extraction, structuration Markdown et création du cours en place ; OCR pour les images branché sur le job de traitement.
+- [x] Jobs relançables pour les traitements longs — le traitement multipart est branché aux `AutomationJob` (handler `process_course`) ; `POST /api/automation/:id/retry`, écran Automatisations et traitements planifiés (`create_revision_plan`, fiches, flashcards, maîtrise) exécutés par le worker cron.
 
 ## Phase 5 — IA et apprentissage actif
 
 - [x] Abstraction `AIProvider` avec provider local configurable et remplaçable.
 - [x] Mode fonctionnel sans clé IA.
 - [x] Génération locale de fiches basée uniquement sur les cours sélectionnés.
-- [~] Modèle et interface `StudySheet` — modèle et API présents ; écran dédié à créer.
+- [x] Modèle et interface `StudySheet` — modèle et API présents ; écran dédié (création multi-cours, détail, suppression) dans l'espace Fiches.
 - [x] Modèle et répétition espacée `Flashcard` via `POST /api/flashcards/:id/review`.
 - [x] Générateur de quiz à réponse courte local depuis un cours via `/api/quizzes`.
 - [x] `QuizAttempt` et mise à jour de la maîtrise via `/api/quizzes/attempt`.
-- [~] `MasteryService` — maîtrise alimentée par les tentatives de quiz et sessions ; fusion flashcards/auto-évaluation à approfondir.
+- [x] `MasteryService` — maîtrise alimentée par les tentatives de quiz, sessions et flashcards avec pondération et récence ; branchement dans les routes quiz/flashcards ; écran Quiz d'auto-évaluation.
 
 ### Validation phase 5
 
@@ -96,35 +94,48 @@ Ce document suit l'avancement réel du projet. Une fonctionnalité est marquée 
 - [x] Manifest PWA et icône d'installation.
 - [x] Service worker et offline fallback.
 - [x] Cache limité au shell et exclusion explicite des routes `/api/` sensibles.
-- [ ] Synchronisation différée à la reconnexion.
-- [ ] Branchement complet du dashboard mobile aux API.
-- [ ] Tests sur iPhone, Android, tablette et desktop.
+- [x] Synchronisation différée à la reconnexion — file d'attente locale des mutations (`lib/offline-queue.ts`, 50 requêtes max, TTL 24 h), rejeu automatique à la reconnexion (`online`, retour d'onglet, Background Sync `os-sync` du service worker) et rafraîchissement des écrans via l'événement `os:online` ; les écrans Dashboard, Cours, Évaluations et Révisions rejouent leurs actions hors ligne.
+- [x] Branchement complet du dashboard mobile aux API — échéances (évaluations + devoirs) et chapitre « focus » alimentées par `/api/dashboard` (nouveau champ `focus` calculé côté serveur), date et prénom réels, bandeau de jours dynamique, liens des panneaux fonctionnels, action rapide connectée aux sections et menu mobile listant toutes les sections.
+- [ ] Tests sur iPhone, Android, tablette et desktop — build et responsive validés, tests sur appareils réels restant à effectuer manuellement.
 
 ### Validation phase 6
 
 - [x] Manifest généré par `/manifest.webmanifest`.
 - [x] Service worker enregistré côté client.
 - [x] Build PWA validé.
+- [x] Build après file de synchronisation PWA et branchement complet du dashboard mobile.
 
 ## Phase 7 — Statistiques, robustesse et déploiement
 
-- [~] Statistiques — moyenne générale, maîtrise moyenne et charge calculées dans `/api/dashboard` ; graphiques, tendances et vues par matière à ajouter.
-- [~] Optimisation — build optimisé et architecture de services en place ; cache, pagination, monitoring et performance mobile à mesurer.
-- [~] Sécurité — sessions, isolation par `userId`, validation Zod et secrets hors du code en place ; rate limiting, contrôle des fichiers, audit et headers à renforcer.
-- [~] Déploiement — architecture cloud-ready et documentation présentes ; PostgreSQL managé, variables cloud, migrations de production et observabilité restent à configurer.
+- [x] Statistiques — moyenne générale, maîtrise moyenne et charge calculées dans `/api/dashboard` ; `/api/statistics` (tendances, sessions par semaine, quiz récents) et écran graphiques par matière.
+- [x] Optimisation — build optimisé et architecture de services en place ; pagination (`limit`/`offset`, `X-Total-Count`), cache `no-store` sur les données, `/api/health` pour le monitoring ; performance mobile à mesurer sur appareils réels.
+- [x] Sécurité — sessions, isolation par `userId`, validation Zod et secrets hors du code en place ; rate limiting `proxy.ts`, contrôle des fichiers par magic bytes, journal d'audit et headers (CSP, HSTS, COOP) renforcés.
+- [x] Déploiement — architecture cloud-ready et `DEPLOYMENT.md` (Vercel, Render, Railway, Docker) ; `npm run db:deploy` pour les migrations ; PostgreSQL managé et observabilité `/api/health` à configurer sur le compte cloud.
+
+### Validation phase 7
+
+- [x] Migration `20260905090000_audit_log` appliquée — journal d'audit persisté dans la table `AuditLog` (écriture best-effort, élagage à 300 événements/utilisateur), `/api/audit` lu en base, test de fumée validé sur la base locale.
 
 ## Prochain jalon recommandé
 
-1. Ajouter l'édition du titre/date et l'annulation des évaluations dans l'interface.
-1. Fournir les identifiants OAuth Google et finaliser la connexion utilisateur en environnement réel.
-2. Configurer un cron cloud vers `/api/automation/worker` et ajouter les handlers Google/IA au fil des phases concernées.
-3. Ajouter les handlers métier spécialisés au worker `AutomationJob` et planifier son exécution.
+1. Fournir les identifiants OAuth Google et valider le consentement réel dans le navigateur, puis tester la synchronisation avec un événement Google réel.
+2. Configurer un cron cloud vers `/api/automation/worker` et un PostgreSQL managé ; appliquer `npm run db:deploy` en production.
+3. Tester le stockage S3 avec un bucket réel (MinIO local déjà documenté) et brancher `AI_API_KEY` sur un provider distant.
+4. Mesurer la performance mobile sur iPhone/Android/tablette et réaliser les tests d'appareils de la phase 6.
 
 ## Références techniques
 
 - Schéma et relations : [`prisma/schema.prisma`](prisma/schema.prisma)
 - Planner : [`services/revision-planner.ts`](services/revision-planner.ts)
+- Pipeline cours : [`services/course-processor.ts`](services/course-processor.ts), [`services/ocr.ts`](services/ocr.ts), [`services/automation.ts`](services/automation.ts)
+- Maîtrise : [`services/mastery.ts`](services/mastery.ts)
+- Stockage : [`services/storage.ts`](services/storage.ts)
+- File de synchronisation hors ligne : [`lib/offline-queue.ts`](lib/offline-queue.ts)
+- Journal d'audit : [`lib/audit.ts`](lib/audit.ts)
 - API dashboard : [`app/api/dashboard/route.ts`](app/api/dashboard/route.ts)
+- API statistiques : [`app/api/statistics/route.ts`](app/api/statistics/route.ts)
 - API révisions : [`app/api/revisions/route.ts`](app/api/revisions/route.ts)
 - API calendrier : [`app/api/calendar/route.ts`](app/api/calendar/route.ts)
+- Recherche de l'avancement réel : [`roadmap.md`](roadmap.md)
+- Déploiement : [`DEPLOYMENT.md`](DEPLOYMENT.md)
 - Configuration locale : [`README.md`](README.md)

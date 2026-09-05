@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPagination, totalHeader } from "@/lib/pagination";
 
 const chapterSchema = z.object({
   subjectId: z.string().cuid(),
@@ -22,8 +23,12 @@ export async function GET(request: Request) {
   const userId = await currentUserId();
   if (!userId) return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
   const subjectId = new URL(request.url).searchParams.get("subjectId");
-  const chapters = await prisma.chapter.findMany({ where: { userId, ...(subjectId ? { subjectId } : {}) }, include: { subject: true, courses: { select: { id: true, title: true } } }, orderBy: { name: "asc" } });
-  return NextResponse.json(chapters);
+  const { take, skip } = getPagination(new URL(request.url));
+  const [chapters, total] = await Promise.all([
+    prisma.chapter.findMany({ where: { userId, ...(subjectId ? { subjectId } : {}) }, include: { subject: true, courses: { select: { id: true, title: true } } }, orderBy: { name: "asc" }, take, skip }),
+    prisma.chapter.count({ where: { userId, ...(subjectId ? { subjectId } : {}) } }),
+  ]);
+  return NextResponse.json(chapters, { headers: totalHeader(total) });
 }
 
 export async function POST(request: Request) {

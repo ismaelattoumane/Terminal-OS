@@ -4,17 +4,20 @@ Terminal OS est le cockpit personnel de gestion de Terminale : cours, chapitres,
 
 ## Etat du projet
 
-La phase 1 contient :
+Les phases 1 à 5 sont en place, et couvrent :
 
 - dashboard responsive avec sidebar desktop, bottom navigation mobile et action rapide ;
-- modele Prisma multi-utilisateur pour sujets, chapitres, cours, evaluations, revisions, devoirs et notes ;
-- validation serveur Zod ;
-- Auth.js avec fournisseur Google optionnel ;
-- API securisee pour les sujets et la creation d'evaluations ;
-- `RevisionPlanner` deterministe qui cree des sessions learning, memorization, practice et final_review selon la date du controle, la difficulte et la maitrise ;
-- scripts de validation et de migration Prisma.
-
-Les prochaines tranches pourront ajouter stockage S3, uploads/OCR, calendrier Google, fiches, flashcards, quiz, jobs et PWA offline sans remettre en cause ces frontieres.
+- modèle Prisma multi-utilisateur pour sujets, chapitres, cours, évaluations, révisions, devoirs et notes ;
+- validation serveur Zod et isolation par utilisateur ;
+- Auth.js avec fournisseur Google optionnel et jeton Google Calendar côté serveur (refresh automatique) ;
+- `RevisionPlanner` déterministe qui crée des sessions learning, memorization, practice et final_review selon la date du contrôle, la difficulté et la maîtrise ;
+- imports de fichiers (PDF, DOCX, TXT, PNG, JPG) avec extraction, **structuration Markdown et OCR images**, pipeline relançable via `AutomationJob` ;
+- fiches de révision et flashcards générées localement (sans clé IA), quiz d'auto-évaluation qui alimentent la maîtrise (`MasteryService`) ;
+- calendrier interne + synchronisation Google Calendar ;
+- écrans Statistiques (tendances, maîtrise par matière) et Automatisations (jobs relançables, audit) ;
+- PWA installable : cache du shell, écran de secours hors ligne et **synchronisation différée des modifications à la reconnexion** (`lib/offline-queue.ts`) ;
+- rate limiting (proxy Next.js), headers de sécurité, contrôle des fichiers par magic bytes ;
+- scripts de validation, migration Prisma et `db:deploy` pour la production.
 
 ## Installation locale
 
@@ -44,13 +47,14 @@ Voir `.env.example`. Les secrets ne doivent jamais etre commits.
 - `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` : activent la connexion Google.
 - `GOOGLE_REDIRECT_URI` : URI de callback OAuth, à déclarer exactement dans Google Cloud Console.
 - `CALENDAR_TIMEZONE` : fuseau utilisé pour les événements Google, par défaut `Europe/Paris`.
-- `S3_*` : reserve pour le stockage des fichiers de cours.
-- `AI_API_KEY` : reserve pour un provider IA optionnel.
+- `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_REGION` : stockage S3 compatible (MinIO, Scaleway, R2, AWS). Vides => stockage désactivé.
+- `S3_PUBLIC_URL` : URL publique du bucket (optionnel, pour les liens de consultation).
+- `AI_API_KEY` : reserved pour un provider IA optionnel ; sans clé, la génération locale reste fonctionnelle.
 - `CRON_SECRET` : secret du cron cloud, à générer aléatoirement et à ne jamais exposer au navigateur.
 
 Pour Google OAuth, declarer `http://localhost:3000/api/auth/callback/google` comme URI de redirection locale.
 
-Quand Google OAuth est configuré, `POST /api/calendar/sync` synchronise les sessions de révision vers le calendrier principal. Le service réutilise `calendarEventId` pour mettre à jour l'événement existant au lieu de créer un doublon. Les jetons restent côté session serveur.
+Quand Google OAuth est configuré, `POST /api/calendar/sync` synchronise les sessions de révision vers le calendrier principal. Le service réutilise `calendarEventId` pour mettre à jour l'événement existant au lieu de créer un doublon. Les jetons restent côté session serveur et sont rafraîchis automatiquement.
 
 ## Commandes utiles
 
@@ -62,25 +66,60 @@ npm run db:format
 npm run db:migrate
 ```
 
-## API phase 1
+## API
 
-- `GET /api/subjects` : liste les matieres de l'utilisateur connecte.
+- `GET /api/subjects` : liste les matieres de l'utilisateur connecte (paginé).
 - `POST /api/subjects` : cree une matiere validee par Zod.
 - `POST /api/evaluations` : cree un controle et ses sessions de revision planifiees.
-- `GET /api/revisions` et `POST /api/revisions` : consulte ou cree une session.
+- `GET /api/revisions` et `POST /api/revisions` : consulte ou cree une session (paginé).
 - `PATCH /api/revisions/:id` : termine, saute ou re-priorise une session.
-- `GET /api/calendar` et `POST /api/calendar` : gere les evenements internes.
+- `GET /api/calendar` et `POST /api/calendar` : gere les evenements internes (paginé).
+- `GET /api/calendar/status` : état de la connexion Google Calendar (connecté, configuré, timezone).
 - `GET /api/dashboard` : calcule les indicateurs du dashboard depuis PostgreSQL.
+- `GET /api/statistics` : tendances, maîtrise par matière, sessions par semaine, quiz récents.
 - `GET/POST /api/automation` : journalise un job utilisateur et peut traiter le prochain job avec `?process=true`.
+- `POST /api/automation/:id/retry` : relance un job en échec puis le traite immédiatement.
 - `POST /api/automation/worker` : traite un job par utilisateur avec `Authorization: Bearer $CRON_SECRET`, pour un cron cloud.
-- `POST /api/courses/upload` : importe un PDF, DOCX, TXT, PNG ou JPG et crée un cours après extraction quand elle est disponible.
-- `GET/POST /api/calendar/sync` : importe les événements Google et synchronise les révisions.
+- `POST /api/courses/upload` : importe un PDF, DOCX, TXT, PNG ou JPG ; extraction + structuration + OCR (images), stockage S3 optionnel.
+- `GET/POST /api/study-sheets` et `DELETE /api/study-sheets/:id` : fiches de révision générées depuis un ou plusieurs cours.
+- `GET/POST /api/flashcards` et `POST /api/flashcards/:id/review` : répétition espacée.
+- `POST /api/quizzes` et `POST /api/quizzes/attempt` : quiz à réponse courte et auto-évaluation (met à jour la maîtrise).
+- `POST /api/calendar/sync` et `GET /api/calendar/sync` : synchronisation aller-retour Google Calendar.
+- `GET /api/storage/health` : état du bucket S3 (connecté requis).
+- `GET /api/health` : observabilité publique (uptime, base de données, mémoire, stockage).
+- `GET /api/audit` : journal d'audit récent de l'utilisateur (persisté dans la table PostgreSQL `AuditLog`, borné à 300 événements par utilisateur).
 
 Les routes renvoient `401` sans session Auth.js et ne permettent pas de lire un autre compte.
+Les routes de consultation sont paginées via `?limit=` / `?offset=` avec l'entête `X-Total-Count`.
+
+## Stockage S3 (test local recommandé)
+
+```bash
+docker run -d --name minio -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
+```
+
+Puis renseigner dans `.env` :
+
+```
+S3_ENDPOINT="http://localhost:9000"
+S3_ACCESS_KEY="minioadmin"
+S3_SECRET_KEY="minioadmin"
+S3_BUCKET="terminal-os"
+S3_REGION="auto"
+```
+
+Créer le bucket `terminal-os` dans la console MinIO (http://localhost:9001),
+puis vérifier via `GET /api/storage/health`.
 
 ## Deploiement
 
-Le projet est compatible avec Vercel, Render, Railway ou un conteneur Node. Fournir les variables d'environnement au fournisseur cloud, une base PostgreSQL persistante et executer `prisma migrate deploy` pendant le deploiement. Le serveur cloud reste independant du PC local.
+Le projet est compatible avec Vercel, Render, Railway ou un conteneur Node.
+Fournir les variables d'environnement au fournisseur cloud, une base PostgreSQL
+persistante et executer `npm run db:deploy` (`prisma migrate deploy`) pendant le
+deploiement. Le guide complet (plateformes, migrations, cron, observabilité)
+est dans [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Architecture
 
