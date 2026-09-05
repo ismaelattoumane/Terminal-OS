@@ -8,9 +8,9 @@
 |---|---:|
 | 🔴 | 0 |
 | 🟠 | 0 |
-| 🟡 | 5 |
+| 🟡 | 1 |
 | 🔵 | 4 |
-| **Total** | **9** |
+| **Total** | **5** |
 
 ## 🔴 Critique
 
@@ -62,7 +62,9 @@ Les points M01 à M06 ci-dessous sont conservés pour traçabilité. Ils sont co
 - **Impact :** faux 429 globaux et contournement/usurpation de bucket.
 - **Correctif :** WAF/Redis ou proxy explicitement approuvé; ne faire confiance qu'aux en-têtes injectés par lui.
 
-## 🟡 Modérés
+## 🟡 Modérés — majoritairement corrigés
+
+D01, D02, D04 et D05 sont corrigés dans `fix(modéré): fiabiliser les données et l'observabilité`. D03 reste ouvert : la file différée ne peut pas stocker un fichier `FormData` sans une implémentation IndexedDB dédiée.
 
 ### D01 — Une note peut être reliée à une évaluation d'une autre matière
 

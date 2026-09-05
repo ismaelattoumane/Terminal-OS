@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   if (parsed.data.grade > parsed.data.maxGrade) return NextResponse.json({ error: "La note dépasse le barème" }, { status: 400 });
   const subject = await prisma.subject.findFirst({ where: { id: parsed.data.subjectId, userId }, select: { id: true } });
   if (!subject) return NextResponse.json({ error: "Matière introuvable" }, { status: 404 });
-  if (parsed.data.evaluationId && !(await prisma.evaluation.findFirst({ where: { id: parsed.data.evaluationId, userId }, select: { id: true } }))) return NextResponse.json({ error: "Évaluation introuvable" }, { status: 404 });
+  if (parsed.data.evaluationId && !(await prisma.evaluation.findFirst({ where: { id: parsed.data.evaluationId, userId, subjectId: parsed.data.subjectId }, select: { id: true } }))) return NextResponse.json({ error: "Évaluation introuvable pour cette matière" }, { status: 404 });
   const grade = await prisma.grade.create({ data: { ...parsed.data, userId } });
   return NextResponse.json(grade, { status: 201 });
 }

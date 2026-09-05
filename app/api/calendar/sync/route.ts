@@ -27,5 +27,6 @@ export async function GET() {
   const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
   if (!user) return NextResponse.json({ error: "Utilisateur introuvable" }, { status: 401 });
   const imported = await importGoogleCalendarEvents(session.googleAccessToken, user.id, new Date());
+  await auditLog(user.id, "calendar.sync", { synced: 0, imported, trigger: "get" });
   return NextResponse.json({ imported });
 }

@@ -86,7 +86,7 @@ npm run db:migrate
 - `POST /api/quizzes` et `POST /api/quizzes/attempt` : quiz à réponse courte et auto-évaluation (met à jour la maîtrise).
 - `POST /api/calendar/sync` et `GET /api/calendar/sync` : synchronisation aller-retour Google Calendar.
 - `GET /api/storage/health` : état du bucket S3 (connecté requis).
-- `GET /api/health` : observabilité publique (uptime, base de données, mémoire, stockage).
+- `GET /api/health` : état public minimal (`status`, base, horodatage). Ajouter `?detailed=1` et le header `x-health-secret: $CRON_SECRET` pour le diagnostic détaillé (uptime, mémoire, stockage).
 - `GET /api/audit` : journal d'audit récent de l'utilisateur (persisté dans la table PostgreSQL `AuditLog`, borné à 300 événements par utilisateur).
 
 Les routes renvoient `401` sans session Auth.js et ne permettent pas de lire un autre compte.

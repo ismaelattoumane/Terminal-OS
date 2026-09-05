@@ -1,4 +1,4 @@
-export function getPagination(url: URL, defaultLimit = 200, maxLimit = 500) {
+export function getPagination(url: URL, defaultLimit = 5000, maxLimit = 5000) {
   const rawLimit = Number(url.searchParams.get("limit") ?? defaultLimit);
   const rawOffset = Number(url.searchParams.get("offset") ?? 0);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), maxLimit) : defaultLimit;

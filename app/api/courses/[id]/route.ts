@@ -36,7 +36,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const { id } = await context.params;
   const existing = await prisma.course.findFirst({ where: { id, userId }, select: { id: true, fileUrl: true } });
   if (!existing) return NextResponse.json({ error: "Cours introuvable" }, { status: 404 });
-  await deleteCourseFile(existing.fileUrl);
   await prisma.course.delete({ where: { id } });
+  void deleteCourseFile(existing.fileUrl);
   return new NextResponse(null, { status: 204 });
 }

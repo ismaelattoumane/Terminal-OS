@@ -49,9 +49,9 @@ Injecter cette commande dans le lifecycle du déploiement (pré-deploy). Exemple
 
 ### 2. Observabilité
 
-- `GET /api/health` : uptime, état de la base (`SELECT 1`), configuration du
-  stockage S3, mémoire, environnement. Utilisable par UptimeRobot / Better Stack
-  pour des alerts.
+- `GET /api/health` : endpoint public minimal (statut, base, horodatage), adapté
+  à UptimeRobot / Better Stack. Le diagnostic détaillé (uptime, mémoire, stockage,
+  environnement) exige `?detailed=1` et le header `x-health-secret: $CRON_SECRET`.
 - `GET /api/storage/health` : vérifie l'accès au bucket S3 (connecté requis).
 - Journal applicatif : les erreurs de jobs sont stockées sur `AutomationJob.error`
   et visibles dans l'écran Automatisations ; le journal d'audit (`GET /api/audit`)

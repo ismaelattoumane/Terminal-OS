@@ -56,3 +56,12 @@ Les événements `all-day` (champ `date`) sont stockés à minuit/23h59 dans `CA
 ## B34 — Refresh token Google jamais mis à jour
 **Fichier modifié :** `lib/auth.ts`
 Le `refresh_token` renvoyé par Google lors du rafraîchissement est persisté s'il est présent, pour éviter la perte de connexion.
+
+---
+
+## D01, D02, D04, D05 — cohérence et exploitation
+
+- Une note liée à une évaluation doit maintenant utiliser la même matière.
+- Les listes paginées chargent désormais jusqu'à 5 000 éléments par défaut, ce qui supprime la troncature silencieuse à 200 éléments.
+- Un cours est supprimé de PostgreSQL avant le nettoyage best-effort de son objet S3, évitant de perdre le document si la base échoue.
+- README et guide de déploiement documentent la réponse publique minimale de `/api/health` et le diagnostic détaillé protégé.
