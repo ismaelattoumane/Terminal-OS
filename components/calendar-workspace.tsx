@@ -3,6 +3,7 @@
 import { FormEvent, startTransition, useEffect, useState } from "react";
 import { CalendarDays, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { signIn } from "next-auth/react";
+import { queuedFetch } from "@/lib/offline-queue";
 
 type CalendarItem = { id: string; title: string; start: string; end: string; type: string };
 type Schedule = { id: string; dayOfWeek: number; startTime: string; endTime: string; location: string | null; subject: { name: string } | null };
@@ -60,7 +61,9 @@ export function CalendarWorkspace() {
     event.preventDefault();
     // B20 : validation côté client avant d'appeler l'API.
     if (endTime <= startTime) { setFeedback("L'heure de fin doit être après l'heure de début."); return; }
-    const response = await fetch("/api/calendar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, start: `${date}T${startTime}:00`, end: `${date}T${endTime}:00`, type: "personal" }) });
+    // B41 : mutation via queuedFetch pour la compatibilité hors-ligne (cohérence PWA).
+    const response = await queuedFetch("/api/calendar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, start: `${date}T${startTime}:00`, end: `${date}T${endTime}:00`, type: "personal" }) });
+    if (response.status === 202) { setTitle(""); setFeedback("Hors ligne : événement synchronisé dès la reconnexion."); return; }
     if (response.ok) { setTitle(""); setFeedback("Événement ajouté."); await load(); return; }
     const data = await response.json().catch(() => null) as { error?: string; details?: { formErrors?: string[]; fieldErrors?: Record<string, string[]> } } | null;
     const detail = data?.details?.formErrors?.[0] ?? Object.values(data?.details?.fieldErrors ?? {}).flat()[0] ?? data?.error;
@@ -70,14 +73,16 @@ export function CalendarWorkspace() {
   // B11 : suppression d'un événement personnel.
   async function deleteEvent(id: string) {
     if (!window.confirm("Supprimer cet événement ? Cette action est définitive.")) return;
-    const response = await fetch(`/api/calendar/${id}`, { method: "DELETE" });
+    const response = await queuedFetch(`/api/calendar/${id}`, { method: "DELETE" });
+    if (response.status === 202) { setFeedback("Hors ligne : suppression synchronisée dès la reconnexion."); return; }
     if (response.ok) { setFeedback("Événement supprimé."); await load(); } else setFeedback("Suppression impossible.");
   }
 
   async function createSchedule(event: FormEvent) {
     event.preventDefault();
     if (endTime <= startTime) { setFeedback("L'heure de fin doit être après l'heure de début."); return; }
-    const response = await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dayOfWeek, startTime, endTime, subjectId: subjectId || undefined, location: location.trim() || undefined }) });
+    const response = await queuedFetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dayOfWeek, startTime, endTime, subjectId: subjectId || undefined, location: location.trim() || undefined }) });
+    if (response.status === 202) { setLocation(""); setFeedback("Hors ligne : créneau synchronisé dès la reconnexion."); return; }
     if (response.ok) { setLocation(""); setFeedback("Créneau ajouté."); await load(); } else setFeedback("Impossible d'ajouter le créneau.");
   }
 
@@ -138,7 +143,7 @@ export function CalendarWorkspace() {
       </section>
       <section className="calendar-board">
         <div className="list-heading"><h2>Créneaux de cours protégés</h2><span>{schedules.length}</span></div>
-        {schedules.length ? schedules.map((schedule) => <div className="calendar-event" key={schedule.id}><span className="event-color school" /><div><strong>{schedule.subject?.name ?? days[schedule.dayOfWeek]}</strong><span>{days[schedule.dayOfWeek]} · {schedule.startTime} - {schedule.endTime}{schedule.location ? ` · ${schedule.location}` : ""}</span></div><button className="delete-button" onClick={() => { if (window.confirm("Supprimer ce créneau ? Cette action est définitive.")) fetch(`/api/schedule/${schedule.id}`, { method: "DELETE" }).then(load); }} aria-label="Supprimer le créneau"><Trash2 size={15} /></button></div>) : <p className="empty-state">Ajoute les horaires de tes cours pour que le planner les évite.</p>}
+        {schedules.length ? schedules.map((schedule) => <div className="calendar-event" key={schedule.id}><span className="event-color school" /><div><strong>{schedule.subject?.name ?? days[schedule.dayOfWeek]}</strong><span>{days[schedule.dayOfWeek]} · {schedule.startTime} - {schedule.endTime}{schedule.location ? ` · ${schedule.location}` : ""}</span></div><button className="delete-button" onClick={() => { if (window.confirm("Supprimer ce créneau ? Cette action est définitive.")) queuedFetch(`/api/schedule/${schedule.id}`, { method: "DELETE" }).then(load); }} aria-label="Supprimer le créneau"><Trash2 size={15} /></button></div>) : <p className="empty-state">Ajoute les horaires de tes cours pour que le planner les évite.</p>}
       </section>
     </div>
   );

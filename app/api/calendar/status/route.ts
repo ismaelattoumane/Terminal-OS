@@ -15,6 +15,6 @@ export async function GET() {
     scopes: ["openid", "email", "profile", "https://www.googleapis.com/auth/calendar.events"],
     offlineAccess: true,
     timezone: process.env.CALENDAR_TIMEZONE ?? "Europe/Paris",
-    hint: configured ? "Le consentement Google se déroule dans le navigateur au premier connexion." : "Renseigne GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET pour activer la connexion.",
+    hint: configured ? "Le consentement Google se déroule dans le navigateur à la première connexion." : "Renseigne GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET pour activer la connexion.",
   });
 }

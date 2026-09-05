@@ -4,9 +4,22 @@ import { checkStorage } from "@/services/storage";
 
 const startedAt = Date.now();
 
-export async function GET() {
+export async function GET(request: Request) {
+  // B40 : la version détaillée (mémoire, config, uptime) n'est exposée qu'avec
+  // un secret (header x-health-secret ou ?secret=) pour éviter la fuite d'infos
+  // système en clair. La version publique reste légère.
+  const url = new URL(request.url);
+  const wantsDetailed = url.searchParams.get("detailed") === "1";
+  const secret = request.headers.get("x-health-secret") ?? url.searchParams.get("secret");
+  const detailedAllowed = Boolean(process.env.CRON_SECRET) && secret === process.env.CRON_SECRET;
   let database = "ok";
   try { await prisma.$queryRaw`SELECT 1`; } catch { database = "error"; }
+  if (!wantsDetailed || !detailedAllowed) {
+    return NextResponse.json(
+      { status: database === "ok" ? "ok" : "degraded", database, timestamp: new Date().toISOString() },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const memory = process.memoryUsage();
   const storage = await checkStorage();
   return NextResponse.json(
@@ -20,6 +33,6 @@ export async function GET() {
       memory: { rss: memory.rss, heapUsed: memory.heapUsed, heapTotal: memory.heapTotal },
       environment: process.env.NODE_ENV,
     },
-    { headers: { "Cache-Control": "no-store", "X-Terminal-OS-Health": database === "ok" ? "ok" : "error" } },
+    { headers: { "Cache-Control": "no-store" } },
   );
 }
