@@ -85,4 +85,4 @@ Ajout des appels `auditLog(...)` correspondants aux actions de la légende.
 - Une erreur de régénération de plan après déplacement d'une évaluation est maintenant renvoyée au client, au lieu d'être ignorée.
 - Les documents importés ont une route de téléchargement authentifiée et un lien « Fichier » dans la liste des cours.
 
-> M06 (rate limit) reste à traiter séparément : `proxy.ts` contient une modification non committée préexistante qui doit être préservée.
+Le rate limiter utilise une identité de visiteur en cookie lorsque `TRUST_PROXY` est absent; les en-têtes d'IP ne sont lus que lorsque ce proxy est explicitement déclaré fiable.

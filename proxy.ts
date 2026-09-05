@@ -32,24 +32,28 @@ function rateLimit(key: string, limit: number, windowMs: number): { allowed: boo
   return { allowed: true, retryAfter: 0 };
 }
 
-// B43 : IP de socket en priorité, sinon x-real-ip, sinon x-forwarded-for
-// (uniquement si TRUST_PROXY est activé, car cet en-tête est falsifiable).
-function clientIp(request: NextRequest): string {
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
+const RATE_LIMIT_COOKIE = "terminal-os-rate-limit";
+
+function clientKey(request: NextRequest): { value: string; shouldSetCookie: boolean } {
   if (process.env.TRUST_PROXY === "true") {
+    const realIp = request.headers.get("x-real-ip");
+    if (realIp) return { value: realIp.trim(), shouldSetCookie: false };
     const forwarded = request.headers.get("x-forwarded-for");
-    if (forwarded) return forwarded.split(",")[0].trim();
+    if (forwarded) return { value: forwarded.split(",")[0].trim(), shouldSetCookie: false };
   }
-  return "unknown";
+  const cookie = request.cookies.get(RATE_LIMIT_COOKIE)?.value;
+  return { value: cookie ?? crypto.randomUUID(), shouldSetCookie: !cookie };
 }
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // B44 : nonce CSP pour les pages (rendu dynamique uniquement).
+      // B44 : nonce CSP pour les pages (rendu dynamique uniquement).
   // Le rate limiting ne protège que l'API.
-  if (!pathname.startsWith("/api")) {
+  // Pendant `next build`, on désactive le nonce : le prerendering statique
+  // ne peut pas gérer un nonce aléatoire par "requête" fictive du build.
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build" || process.env.npm_lifecycle_event === "build";
+  if (!pathname.startsWith("/api") && !pathname.startsWith("/_next") && !isBuildPhase) {
     const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
     const isDev = process.env.NODE_ENV === "development";
     const cspHeader = [
@@ -73,7 +77,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Rate limiting API.
-  const ip = clientIp(request);
+  const client = clientKey(request);
 
   // Limites par défaut : 300 requêtes / 60 s. Les routes sensibles sont plus strictes.
   const limits: Array<{ match: RegExp; limit: number; windowMs: number }> = [
@@ -84,13 +88,14 @@ export function proxy(request: NextRequest) {
   ];
   const rule = limits.find((entry) => entry.match.test(pathname)) ?? limits[limits.length - 1];
   // B43 : clé par chemin complet (pas de mutualisation des ids entre utilisateurs).
-  const { allowed, retryAfter } = rateLimit(`${ip}:${pathname}`, rule.limit, rule.windowMs);
+  const { allowed, retryAfter } = rateLimit(`${client.value}:${pathname}`, rule.limit, rule.windowMs);
   if (!allowed) {
     return NextResponse.json({ error: "Trop de requêtes, réessaie dans quelques secondes" }, { status: 429, headers: { "Retry-After": String(retryAfter), "Cache-Control": "no-store" } });
   }
   const response = NextResponse.next();
+  if (client.shouldSetCookie) response.cookies.set(RATE_LIMIT_COOKIE, client.value, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 30 });
   response.headers.set("X-RateLimit-Limit", String(rule.limit));
-  response.headers.set("X-RateLimit-Remaining", String(Math.max(0, rule.limit - (buckets.get(`${ip}:${pathname}`)?.count ?? 0))));
+  response.headers.set("X-RateLimit-Remaining", String(Math.max(0, rule.limit - (buckets.get(`${client.value}:${pathname}`)?.count ?? 0))));
   return response;
 }
 

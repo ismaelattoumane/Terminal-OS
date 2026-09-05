@@ -7,10 +7,10 @@
 | Gravité | Nombre |
 |---|---:|
 | 🔴 | 0 |
-| 🟠 | 1 |
+| 🟠 | 0 |
 | 🟡 | 5 |
 | 🔵 | 4 |
-| **Total** | **10** |
+| **Total** | **9** |
 
 ## 🔴 Critique
 
@@ -18,7 +18,7 @@ Aucun défaut critique ouvert. C01 a été corrigé dans le commit `fix(critique
 
 ## 🟠 Majeurs — corrigés
 
-Les points M01 à M05 ci-dessous sont conservés pour traçabilité et corrigés dans le commit `fix(majeur): fiabiliser les relations et les fichiers`. M06 reste ouvert : son correctif chevauche une modification non committée préexistante de `proxy.ts`.
+Les points M01 à M06 ci-dessous sont conservés pour traçabilité. Ils sont corrigés dans les commits dédiés aux gravités critique et majeure.
 
 ### M01 — Une évaluation accepte des chapitres d'une autre matière
 
