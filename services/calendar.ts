@@ -2,7 +2,33 @@ import { prisma } from "@/lib/prisma";
 
 type GoogleEvent = { id?: string; summary: string; description: string; start: { dateTime: string; timeZone: string }; end: { dateTime: string; timeZone: string } };
 
+// B32 / B33 : construire des dates dans un fuseau donné (Europe/Paris) sans
+// dépendre du fuseau du serveur (souvent UTC en cloud), via Intl.
+
+function datePartsInZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute"), second: get("second") };
+}
+
+function offsetMs(date: Date, timeZone: string): number {
+  const { year, month, day, hour, minute, second } = datePartsInZone(date, timeZone);
+  const asUTC = Date.UTC(year, month - 1, day, hour, minute, second);
+  return asUTC - date.getTime();
+}
+
+function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
+  let guess = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const offset = offsetMs(guess, timeZone);
+  guess = new Date(guess.getTime() - offset);
+  // Deuxième passage pour corriger l'heure d'été au bord d'une transition.
+  if (offsetMs(guess, timeZone) !== offset) guess = new Date(guess.getTime() - (offsetMs(guess, timeZone) - offset));
+  return guess;
+}
+
 export async function importGoogleCalendarEvents(accessToken: string, userId: string, timeMin?: Date, timeMax?: Date) {
+  const timeZone = process.env.CALENDAR_TIMEZONE ?? "Europe/Paris";
   const params = new URLSearchParams({ singleEvents: "true", showDeleted: "false", maxResults: "2500" });
   if (timeMin) params.set("timeMin", timeMin.toISOString());
   if (timeMax) params.set("timeMax", timeMax.toISOString());
@@ -11,8 +37,23 @@ export async function importGoogleCalendarEvents(accessToken: string, userId: st
   const data = await response.json() as { items?: Array<{ id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string } }> };
   let imported = 0;
   for (const item of data.items ?? []) {
-    const start = item.start?.dateTime ?? (item.start?.date ? `${item.start.date}T00:00:00.000Z` : null);
-    const end = item.end?.dateTime ?? (item.end?.date ? `${item.end.date}T23:59:59.000Z` : null);
+    // B33 : les événements « journées entières » (champ `date`) doivent être
+    // stockés dans le fuseau CALENDAR_TIMEZONE, pas calés en UTC (ce qui les
+    // décalait d'un cran horaire à l'affichage).
+    let start: Date | null = null;
+    let end: Date | null = null;
+    if (item.start?.dateTime) {
+      start = new Date(item.start.dateTime);
+    } else if (item.start?.date) {
+      const [y, m, d] = item.start.date.split("-").map(Number);
+      start = zonedTimeToUtc(y, m, d, 0, 0, timeZone);
+    }
+    if (item.end?.dateTime) {
+      end = new Date(item.end.dateTime);
+    } else if (item.end?.date) {
+      const [y, m, d] = item.end.date.split("-").map(Number);
+      end = zonedTimeToUtc(y, m, d, 23, 59, timeZone);
+    }
     if (!start || !end) continue;
     await prisma.event.upsert({ where: { userId_source_externalId: { userId, source: "google", externalId: item.id } }, update: { title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end) }, create: { userId, title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end), type: "personal", source: "google", externalId: item.id } });
     imported += 1;
@@ -24,7 +65,11 @@ export async function syncRevisionToGoogleCalendar(accessToken: string, revision
   const revision = await prisma.revisionSession.findFirst({ where: { id: revisionId, userId }, include: { subject: true, chapter: true, evaluation: true } });
   if (!revision) throw new Error("Révision introuvable");
   const timeZone = process.env.CALENDAR_TIMEZONE ?? "Europe/Paris";
-  const start = new Date(revision.date); const [hours, minutes] = (revision.startTime ?? "18:00").split(":").map(Number); start.setHours(hours, minutes, 0, 0);
+  // B32 : construire la date dans le fuseau CALENDAR_TIMEZONE (pas le fuseau du
+  // serveur) pour que l'événement Google soit à la bonne heure.
+  const { year, month, day } = datePartsInZone(revision.date, timeZone);
+  const [hours, minutes] = (revision.startTime ?? "18:00").split(":").map(Number);
+  const start = zonedTimeToUtc(year, month, day, hours, minutes, timeZone);
   const end = new Date(start.getTime() + revision.duration * 60_000);
   const event: GoogleEvent = { summary: `🧠 Révision ${revision.subject.name} — ${revision.chapter?.name ?? revision.title}`, description: `Type : ${revision.type}\nPriorité : ${revision.priority}\nContrôle : ${revision.evaluation?.title ?? "Révision personnelle"}`, start: { dateTime: start.toISOString(), timeZone }, end: { dateTime: end.toISOString(), timeZone } };
   const response = await fetch(revision.calendarEventId ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${revision.calendarEventId}` : "https://www.googleapis.com/calendar/v3/calendars/primary/events", { method: revision.calendarEventId ? "PATCH" : "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify(event) });

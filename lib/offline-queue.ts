@@ -71,7 +71,9 @@ export async function queuedFetch(url: string, init?: RequestInit): Promise<Resp
     return await fetch(url, init);
   } catch (error) {
     const method = (init?.method ?? "GET").toUpperCase();
-    if (!isBrowser() || window.navigator.onLine || method === "GET" || method === "HEAD") throw error;
+    // B29 : on met en file sur échec réseau même si navigator.onLine === true
+    // (cas fréquent en WiFi où le réseau est mort mais l'API le croit en ligne).
+    if (!isBrowser() || method === "GET" || method === "HEAD") throw error;
     const headers: Record<string, string> = {};
     new Headers(init?.headers ?? undefined).forEach((value, key) => { headers[key] = value; });
     const queue = readQueue();
@@ -99,16 +101,27 @@ export async function flushOfflineQueue(): Promise<number> {
   const remaining = readQueue();
   if (!remaining.length) return 0;
   let flushed = 0;
-  while (remaining.length) {
-    const entry = remaining[0];
-    try {
-      const response = await fetch(entry.url, { method: entry.method, headers: entry.headers, body: entry.body });
-      const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-      if (retryable) break;
-      remaining.shift();
-      flushed += 1;
-    } catch {
-      break;
+  // B29 : une requête qui répond 5xx/408/429 ne doit pas bloquer toute la file
+  // derrière elle (head-of-line blocking). On la replace en fin de file et on
+  // continue ; si aucun progrès n'est fait sur un tour, on arrête.
+  let progress = true;
+  while (remaining.length && progress) {
+    progress = false;
+    const attempts = remaining.length;
+    for (let i = 0; i < attempts; i += 1) {
+      const entry = remaining[0];
+      try {
+        const response = await fetch(entry.url, { method: entry.method, headers: entry.headers, body: entry.body });
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        if (retryable) { remaining.push(remaining.shift()!); continue; }
+        remaining.shift();
+        flushed += 1;
+        progress = true;
+      } catch {
+        // Toujours hors ligne : on stoppe, les entrées restent en file.
+        remaining.push(remaining.shift()!);
+        break;
+      }
     }
   }
   writeQueue(remaining);

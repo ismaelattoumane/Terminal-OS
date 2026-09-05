@@ -10,8 +10,9 @@ export async function enqueueJob(userId: string, type: JobType, payload: object,
   return prisma.automationJob.upsert({ where: { userId_idempotencyKey: { userId, idempotencyKey } }, update: {}, create: { userId, type, payload, idempotencyKey } });
 }
 
-export async function processNextJob(userId: string) {
-  const job = await prisma.automationJob.findFirst({ where: { userId, status: { in: ["pending", "failed"] }, attempts: { lt: 3 } }, orderBy: { createdAt: "asc" } });
+export async function processNextJob(userId: string, jobId?: string) {
+  // B28 : on peut cibler un job précis (relance) sinon on prend le plus ancien.
+  const job = await prisma.automationJob.findFirst({ where: { userId, ...(jobId ? { id: jobId } : {}), status: { in: ["pending", "failed"] }, attempts: { lt: 3 } }, orderBy: { createdAt: "asc" } });
   if (!job) return null;
   const claimed = await prisma.automationJob.updateMany({ where: { id: job.id, status: job.status, attempts: job.attempts }, data: { status: "running", attempts: { increment: 1 } } });
   if (!claimed.count) return null;
@@ -100,10 +101,12 @@ async function handleProcessCourse(userId: string, payload: Record<string, unkno
     }
   }
 
-  const latest = await prisma.course.findFirst({ where: { id: course.id, userId }, select: { content: true } });
+  const latest = await prisma.course.findFirst({ where: { id: course.id, userId }, select: { content: true, rawContent: true } });
   if (latest?.content?.trim()) {
     const structured = structureCourseText(course.title, latest.content);
-    await prisma.course.update({ where: { id: course.id }, data: { content: structured } });
+    // B30 : on conserve le contenu brut original avant de le remplacer par la
+    // version structurée (évite la perte de données au-delà de l'extrait 80 lignes).
+    await prisma.course.update({ where: { id: course.id }, data: { content: structured, rawContent: latest.rawContent ?? latest.content } });
   }
   if (course.chapterId) await recalculateChapterMastery(userId, course.chapterId);
 }

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { allowedCourseMimeTypes, extractCourseText, MAX_COURSE_FILE_SIZE, sourceTypeFor, validateFileSignature } from "@/services/course-processor";
+import { allowedCourseMimeTypes, allowedCourseExtensions, extractCourseText, MAX_COURSE_FILE_SIZE, sourceTypeFor, validateFileSignature } from "@/services/course-processor";
 import { uploadCourseFile } from "@/services/storage";
 import { enqueueJob, processNextJob } from "@/services/automation";
 import { auditLog } from "@/lib/audit";
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "Fichier manquant" }, { status: 400 });
   if (file.size > MAX_COURSE_FILE_SIZE) return NextResponse.json({ error: "Fichier trop volumineux (15 Mo maximum)" }, { status: 413 });
-  if (!allowedCourseMimeTypes.has(file.type)) return NextResponse.json({ error: "Format non supporté" }, { status: 415 });
+  if (!allowedCourseMimeTypes.has(file.type) && !allowedCourseExtensions.test(file.name)) return NextResponse.json({ error: "Format non supporté" }, { status: 415 });
   const signature = await validateFileSignature(file);
   if (!signature.ok) return NextResponse.json({ error: "Le contenu du fichier ne correspond pas à son type déclaré" }, { status: 415 });
   const metadata = metadataSchema.safeParse({ subjectId: form.get("subjectId"), chapterId: form.get("chapterId") || undefined, title: form.get("title") || undefined });
@@ -35,6 +35,6 @@ export async function POST(request: Request) {
   await auditLog(user.id, "course.upload", { courseId: course.id, fileName: file.name, sourceType: course.sourceType, stored: Boolean(fileUrl) });
   // Traitement du pipeline (structuration, voire OCR) dès maintenant, relançable via les Automatisations.
   let processed = null;
-  try { processed = await processNextJob(user.id); } catch { /* le job reste relançable depuis /api/automation */ }
+  try { processed = await processNextJob(user.id, job.id); } catch { /* le job reste relançable depuis /api/automation */ }
   return NextResponse.json({ course, jobId: job.id, extracted: Boolean(content), stored: Boolean(fileUrl), processed: processed ? { id: processed.id, status: processed.status } : null }, { status: 201 });
 }

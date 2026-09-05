@@ -22,9 +22,12 @@ export const authOptions: NextAuthOptions = {
       if (!token.googleRefreshToken) return token;
       const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID ?? "", client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "", grant_type: "refresh_token", refresh_token: token.googleRefreshToken }) });
       if (!response.ok) return { ...token, googleAccessToken: undefined, googleRefreshToken: undefined };
-      const refreshed = await response.json() as { access_token: string; expires_in?: number };
+      const refreshed = await response.json() as { access_token: string; expires_in?: number; refresh_token?: string };
       token.googleAccessToken = refreshed.access_token;
       token.googleAccessTokenExpiresAt = Date.now() + (refreshed.expires_in ?? 3600) * 1000;
+      // B34 : Google peut renouveler le refresh_token ; on le persiste s'il est
+      // présent pour éviter la perte de connexion à terme.
+      if (refreshed.refresh_token) token.googleRefreshToken = refreshed.refresh_token;
       return token;
     },
     async session({ session, token }) {

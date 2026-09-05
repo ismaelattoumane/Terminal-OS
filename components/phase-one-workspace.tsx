@@ -3,6 +3,7 @@
 import { FormEvent, startTransition, useEffect, useRef, useState } from "react";
 import { Check, Plus, Trash2 } from "lucide-react";
 import { onReconnect, queuedFetch } from "@/lib/offline-queue";
+import { fetchJsonWithLimit } from "@/lib/api-client";
 
 type Subject = { id: string; name: string; shortName: string; color: string; coefficient: number };
 type Chapter = { id: string; name: string; mastery: number; subject: { name: string }; subjectId: string };
@@ -18,9 +19,15 @@ export function PhaseOneWorkspace({ section }: { section: string }) {
 
   async function load() {
     try {
-      const responses = await Promise.all([fetch("/api/subjects"), fetch("/api/chapters"), fetch("/api/courses"), fetch("/api/evaluations")]);
-      const data = await Promise.all(responses.map((response) => response.ok ? response.json() : []));
-      setSubjects(data[0]); setChapters(data[1]); setCourses(data[2]); setEvaluations(data[3]);
+      const [subjects, chapters, courses, evaluations] = await Promise.all([
+        fetchJsonWithLimit<Subject>("/api/subjects"),
+        fetchJsonWithLimit<Chapter>("/api/chapters"),
+        fetchJsonWithLimit<Course>("/api/courses"),
+        fetchJsonWithLimit<Evaluation>("/api/evaluations"),
+      ]);
+      setSubjects(subjects.items); setChapters(chapters.items); setCourses(courses.items); setEvaluations(evaluations.items);
+      const truncated = [subjects, chapters, courses, evaluations].some((result) => result.truncated);
+      if (truncated) setMessage("Certaines listes sont tronquées aux 200 premiers éléments. Utilise les filtres ou augmente la limite.");
     } catch { setMessage("Connecte-toi pour gérer tes données."); }
   }
   useEffect(() => {

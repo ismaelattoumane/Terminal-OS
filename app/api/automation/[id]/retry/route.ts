@@ -14,7 +14,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   try {
     await auditLog(user.id, "job.retry", { jobId: id });
     await retryJob(user.id, id);
-    const processed = await processNextJob(user.id);
+    const processed = await processNextJob(user.id, id);
     return NextResponse.json({ processed: processed ? { id: processed.id, status: processed.status } : null });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Relance impossible" }, { status: 400 });

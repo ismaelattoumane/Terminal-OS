@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { weightedAverageOn20 } from "@/services/grades";
 
 function startOfDay(value: Date) { return new Date(value.getFullYear(), value.getMonth(), value.getDate()); }
 function mondayOf(value: Date) { const day = startOfDay(value); const offset = (day.getDay() + 6) % 7; day.setDate(day.getDate() - offset); return day; }
@@ -16,7 +17,7 @@ export async function GET() {
     prisma.subject.findMany({ where: { userId: user.id }, include: { chapters: { select: { mastery: true } }, grades: { select: { grade: true, maxGrade: true, coefficient: true, date: true } } }, orderBy: { name: "asc" } }),
     prisma.grade.findMany({ where: { userId: user.id }, include: { subject: { select: { name: true } } }, orderBy: { date: "desc" }, take: 12 }),
     prisma.chapter.findMany({ where: { userId: user.id }, select: { mastery: true } }),
-    prisma.revisionSession.findMany({ where: { userId: user.id }, select: { date: true, duration: true, status: true } }),
+    prisma.revisionSession.findMany({ where: { userId: user.id }, select: { date: true, duration: true, status: true, subjectId: true } }),
     prisma.quizAttempt.findMany({ where: { userId: user.id }, include: { chapter: { select: { name: true } }, subject: { select: { name: true } } }, orderBy: { date: "desc" }, take: 15 }),
     prisma.flashcard.count({ where: { userId: user.id } }),
     prisma.studySheet.count({ where: { userId: user.id } }),
@@ -46,7 +47,11 @@ export async function GET() {
     return { weekStart: weekStart.toISOString().slice(0, 10), count: weekSessions.length, plannedMinutes: weekSessions.reduce((sum, revision) => sum + (revision.status === "planned" ? revision.duration : 0), 0), completedMinutes: weekSessions.reduce((sum, revision) => sum + (revision.status === "completed" ? revision.duration : 0), 0) };
   });
 
-  const workloadBySubject = subjects.map((subject) => ({ id: subject.id, name: subject.name, plannedMinutes: 0, sessionCount: 0 }));
+  // B24 : charge de travail réelle (sessions planifiées) par matière au lieu de 0.
+  const workloadBySubject = subjects.map((subject) => {
+    const planned = revisions.filter((revision) => revision.subjectId === subject.id && revision.status === "planned");
+    return { id: subject.id, name: subject.name, plannedMinutes: planned.reduce((sum, revision) => sum + revision.duration, 0), sessionCount: planned.length };
+  });
 
   return NextResponse.json(
     {

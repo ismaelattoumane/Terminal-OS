@@ -6,7 +6,9 @@ const imageTypes = new Set(["image/png", "image/jpeg"]);
 
 export async function extractCourseText(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
-  if (textTypes.has(file.type) || file.name.toLowerCase().endsWith(".txt")) return buffer.toString("utf8");
+  // B31 : certains navigateurs/OS envoient "application/octet-stream" ou "" pour
+  // les .md / .txt, on accepte donc aussi par extension (comme pour .pdf/.docx).
+  if (textTypes.has(file.type) || /\.(txt|md|markdown)$/i.test(file.name)) return buffer.toString("utf8");
   if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
     const parser = new PDFParse({ data: buffer });
     try { return (await parser.getText()).text; } finally { await parser.destroy(); }
@@ -100,4 +102,7 @@ export function sourceTypeFor(file: File) {
 }
 
 export const MAX_COURSE_FILE_SIZE = 15 * 1024 * 1024;
+// B31 : les .md/.txt peuvent arriver avec un MIME non garanti (octet-stream,
+// vide) ; l'extension est donc aussi acceptée à l'upload (en plus du MIME).
 export const allowedCourseMimeTypes = new Set(["text/plain", "text/markdown", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg"]);
+export const allowedCourseExtensions = /\.(txt|md|markdown|pdf|docx|png|jpe?g)$/i;

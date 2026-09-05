@@ -172,6 +172,9 @@ model Course {
   title       String
   description String?
   content     String?
+  // B30 : contenu original (extrait brut) préservé avant structuration, pour ne
+  // pas perdre les données au-delà des 80 lignes de l'extrait.
+  rawContent  String?
   sourceType  CourseSourceType @default(text)
   fileUrl     String?
   difficulty  Difficulty       @default(normal)
