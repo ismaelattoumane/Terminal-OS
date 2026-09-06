@@ -172,16 +172,23 @@ return (
               </div>
               {dashboardError && <div className="state-message state-error" role="alert" style={{ marginBottom: 16 }}>{dashboardError}<button className="ghost-button" onClick={() => void loadDashboard()}>Réessayer</button></div>}
               {dashboardLoading && !dashboard ? (
-                <div className="dash-grid">
-                  <div className="dash-stack">
-                    <div className="panel"><div className="panel-header"><h2>À faire aujourd&apos;hui</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div></div>
-                    <div className="panel"><div className="panel-header"><h2>Prochain contrôle</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
+                <>
+                  <div className="metrics-row">
+                    <div className="metric-card"><span className="skeleton" style={{ width: "60%", height: "22px" }} /><span className="skeleton" style={{ width: "40%", height: "12px", marginTop: 4 }} /></div>
+                    <div className="metric-card"><span className="skeleton" style={{ width: "50%", height: "22px" }} /><span className="skeleton" style={{ width: "30%", height: "12px", marginTop: 4 }} /></div>
+                    <div className="metric-card"><span className="skeleton" style={{ width: "70%", height: "22px" }} /><span className="skeleton" style={{ width: "35%", height: "12px", marginTop: 4 }} /></div>
                   </div>
-                  <div className="dash-stack">
-                    <div className="panel"><div className="panel-header"><h2>Rappels</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
-                    <div className="panel"><div className="panel-header"><h2>Progression</h2></div><div className="panel-body"><span className="skeleton" /></div></div>
+                  <div className="dash-grid">
+                    <div className="dash-stack">
+                      <div className="panel"><div className="panel-header"><h2>À faire aujourd&apos;hui</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div></div>
+                      <div className="panel"><div className="panel-header"><h2>Prochain contrôle</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
+                    </div>
+                    <div className="dash-stack">
+                      <div className="panel"><div className="panel-header"><h2>Rappels</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
+                      <div className="panel"><div className="panel-header"><h2>Progression</h2></div><div className="panel-body"><span className="skeleton" /></div></div>
+                    </div>
                   </div>
-                </div>
+                </>
               ) : dashboard ? (
                 <Dashboard key="dash" data={dashboard} reminders={reminders} onComplete={(id, title) => void completeRevision(id, title)} onNavigate={(label) => go(label)} />
               ) : null}
@@ -205,6 +212,19 @@ return (
     </div>
   );
 }
+/* ── Carte métrique ─────────────────────────────────────────────────────── */
+function MetricCard({ icon: Icon, label, value, bg, color }: { icon: typeof LayoutDashboard; label: string; value: string | number; bg: string; color: string }) {
+  return (
+    <div className="metric-card">
+      <div className="metric-icon" style={{ background: bg, color }}>
+        <Icon size={18} />
+      </div>
+      <div className="metric-value">{value}</div>
+      <div className="metric-label">{label}</div>
+    </div>
+  );
+}
+
 /* ── Dashboard ──────────────────────────────────────────────────────────── */
 function Dashboard({ data, reminders, onComplete, onNavigate }: {
   data: DashboardData; reminders: Reminder[]; onComplete: (id: string, title: string) => void; onNavigate: (label: string) => void;
@@ -227,7 +247,13 @@ function Dashboard({ data, reminders, onComplete, onNavigate }: {
   const weakChapters = data.subjects.flatMap((subject) => subject.chapters.map((chapter) => ({ ...chapter, subjectName: subject.name }))).sort((a, b) => a.mastery - b.mastery).slice(0, 3);
 
   return (
-    <div className="dash-grid">
+    <>
+      <div className="metrics-row">
+        <MetricCard icon={LineChart} label="Charge" value={data.workload} bg="var(--blue-soft)" color="var(--blue)" />
+        <MetricCard icon={Target} label="Progression" value={`${data.progression.mastery}%`} bg="var(--green-soft)" color="var(--green)" />
+        <MetricCard icon={CalendarDays} label="Prochain" value={daysUntil !== null ? (daysUntil === 0 ? "Aujourd'hui" : `J-${daysUntil}`) : "—"} bg="var(--accent-soft)" color="var(--accent)" />
+      </div>
+      <div className="dash-grid">
       <div className="dash-stack">
         {data.alerts.lateRevisions > 0 && (
           <div className="state-message state-warning" role="alert"><strong>{data.alerts.lateRevisions} révision(s) en retard.</strong><button className="ghost-button" onClick={() => onNavigate("Révisions")}>Voir</button></div>
@@ -305,6 +331,7 @@ function Dashboard({ data, reminders, onComplete, onNavigate }: {
         </section>
       </div>
     </div>
+    </>
   );
 }
 function NavItem({ label, icon: Icon, active, onClick }: { label: string; icon: typeof LayoutDashboard; active: boolean; onClick: () => void }) {
