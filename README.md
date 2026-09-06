@@ -51,8 +51,21 @@ Voir `.env.example`. Les secrets ne doivent jamais etre commits.
 - `S3_PUBLIC_URL` : URL publique du bucket (optionnel, pour les liens de consultation).
 - `AI_API_KEY` : reserved pour un provider IA optionnel ; sans clé, la génération locale reste fonctionnelle.
 - `CRON_SECRET` : secret du cron cloud, à générer aléatoirement et à ne jamais exposer au navigateur.
+- `TRUST_PROXY` : `true` derrière un reverse proxy (lit `x-real-ip`/`x-forwarded-for` pour le rate limiting dans `proxy.ts`). Laisser `false` ou vide en local.
 
 Pour Google OAuth, declarer `http://localhost:3000/api/auth/callback/google` comme URI de redirection locale.
+
+## Statuts de révision & rappels
+
+Les sessions de révision possédent un statut (`RevisionStatus`) :
+
+- `planned` — planifiée, pas encore commencée (commencer avec « Commencer ») → `in_progress`.
+- `in_progress` — en cours de révision.
+- `completed` — terminée (valider avec « Terminer »).
+- `skipped` — ignorée.
+- `postponed` — reportée d’un jour (« Reporter »), replanifiable.
+
+Les **rappels** (contrôle proche, révision en retard, devoir urgent) sont calculés à la volée depuis PostgreSQL par `services/reminders.ts`. Un cron `generate_reminders` (traité par `/api/automation/worker` avec `CRON_SECRET`) les journalise et rafraîchit le panneau du dashboard. Consultables en temps réel via `GET /api/reminders`.
 
 Quand Google OAuth est configuré, `POST /api/calendar/sync` synchronise les sessions de révision vers le calendrier principal. Le service réutilise `calendarEventId` pour mettre à jour l'événement existant au lieu de créer un doublon. Les jetons restent côté session serveur et sont rafraîchis automatiquement.
 
@@ -66,23 +79,27 @@ npm run db:format
 npm run db:migrate
 ```
 
+> **Tests** : la commande `npm test` n’est pas encore implémentée (P3). La validation
+> passe par `npx tsc --noEmit` et `npm run lint` (voir `PROJECT_AUDIT.md`).
+
 ## API
 
 - `GET /api/subjects` : liste les matieres de l'utilisateur connecte (paginé).
 - `POST /api/subjects` : cree une matiere validee par Zod.
-- `POST /api/evaluations` : cree un controle et ses sessions de revision planifiees.
+- `POST /api/evaluations` : crée un contrôle et ses sessions de révision planifiées ; `PATCH /api/evaluations/:id` (statut + date) régénère le plan et nettoie les événements Google orphelins ; `DELETE` supprime avec cleanup.
 - `GET /api/revisions` et `POST /api/revisions` : consulte ou cree une session (paginé).
-- `PATCH /api/revisions/:id` : termine, saute ou re-priorise une session.
+- `PATCH /api/revisions/:id` : Commencer, Terminer, Reporter, passer au statut `skipped`/`postponed`, ou éditer (date/heure/durée) ; nettoie les événements Google orphelins.
 - `GET /api/calendar` et `POST /api/calendar` : gere les evenements internes (paginé).
 - `GET /api/calendar/status` : état de la connexion Google Calendar (connecté, configuré, timezone).
-- `GET /api/dashboard` : calcule les indicateurs du dashboard depuis PostgreSQL.
+- `GET /api/dashboard` : calcule les indicateurs du dashboard depuis PostgreSQL (alerts, lateRevisions, activité).
+- `GET /api/reminders` : rappels calculés à la volée (contrôle proche, révision en retard, devoir urgent) ; rafraîchit le panneau dashboard.
 - `GET /api/statistics` : tendances, maîtrise par matière, sessions par semaine, quiz récents.
 - `GET/POST /api/automation` : journalise un job utilisateur et peut traiter le prochain job avec `?process=true`.
 - `POST /api/automation/:id/retry` : relance un job en échec puis le traite immédiatement.
 - `POST /api/automation/worker` : traite un job par utilisateur avec `Authorization: Bearer $CRON_SECRET`, pour un cron cloud.
 - `POST /api/courses/upload` : importe un PDF, DOCX, TXT, PNG ou JPG ; extraction + structuration + OCR (images), stockage S3 optionnel.
-- `GET/POST /api/study-sheets` et `DELETE /api/study-sheets/:id` : fiches de révision générées depuis un ou plusieurs cours.
-- `GET/POST /api/flashcards` et `POST /api/flashcards/:id/review` : répétition espacée.
+- `GET/POST /api/study-sheets` et `GET /api/study-sheets/:id` (GET/PATCH/DELETE) : fiches de révision générées et **éditables** (titre + contenu fusionné) depuis un ou plusieurs cours.
+- `GET/POST /api/flashcards` (`?scope=all` pour gérer toutes les cartes), `PATCH/DELETE /api/flashcards/:id`, et `POST /api/flashcards/:id/review` : répétition espacée + gestion complète.
 - `POST /api/quizzes` et `POST /api/quizzes/attempt` : quiz à réponse courte et auto-évaluation (met à jour la maîtrise).
 - `POST /api/calendar/sync` et `GET /api/calendar/sync` : synchronisation aller-retour Google Calendar.
 - `GET /api/storage/health` : état du bucket S3 (connecté requis).
@@ -129,5 +146,5 @@ components/   composants UI reutilisables (prochaines tranches)
 lib/          client Prisma et configuration Auth.js
 prisma/       schema et migrations PostgreSQL
 services/     logique metier, dont RevisionPlanner
-public/       assets et manifest PWA (phase suivante)
+public/       assets, icônes PNG/SVG et manifeste PWA (`app/manifest.ts`)
 ```

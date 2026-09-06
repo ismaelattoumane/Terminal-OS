@@ -28,6 +28,7 @@ Sur un fournisseur cloud :
 | `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` | non | Stockage S3 des fichiers de cours ; vide = stockage désactivé. |
 | `AI_API_KEY` | non | Provider IA distant optionnel (mode local fonctionnel sans clé). |
 | `CRON_SECRET` | non | Secret du cron `/api/automation/worker` (Bearer token). |
+| `TRUST_PROXY` | non | `true` derrière un reverse proxy (lit `x-real-ip`/`x-forwarded-for` pour le rate limiting). Laisser `false`/vide en local. |
 
 ## Pipeline de déploiement
 
@@ -71,6 +72,14 @@ Authorization: Bearer $CRON_SECRET
 Ce endpoint traite un job « pending/failed » par utilisateur (max 3 tentatives),
 puis passe à l'utilisateur suivant. Les jobs sont idempotents
 (`@@unique([userId, idempotencyKey])`).
+
+Les jobs traités incluent `generate_reminders` : ce job (idempotent, sans écriture
+de table) calcule à la volée les rappels depuis PostgreSQL (contrôle proche,
+révision en retard, devoir urgent) via `collectReminders` et les journalise dans
+l'audit. Le résultat est exposé en temps réel par `GET /api/reminders`,
+affiché dans le panneau de rappels du dashboard. Planifier le cron
+`generate_reminders` régulièrement (ex. toutes les 5–15 min) ; le worker ne
+rejouera que les jobs effectivement en attente pour chaque utilisateur.
 
 ## Plateformes
 
