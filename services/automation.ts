@@ -3,8 +3,10 @@ import { recalculateAllMastery, recalculateChapterMastery } from "@/services/mas
 import { structureCourseText } from "@/services/course-processor";
 import { getAIProvider } from "@/services/ai";
 import { createRevisionPlan } from "@/services/revision-planner";
+import { collectReminders } from "@/services/reminders";
+import { auditLog } from "@/lib/audit";
 
-type JobType = "create_revision_plan" | "sync_google_calendar" | "process_course" | "generate_study_sheet" | "generate_flashcards" | "generate_quiz" | "update_mastery" | "recalculate_workload";
+type JobType = "create_revision_plan" | "sync_google_calendar" | "process_course" | "generate_study_sheet" | "generate_flashcards" | "generate_quiz" | "update_mastery" | "recalculate_workload" | "generate_reminders";
 
 export async function enqueueJob(userId: string, type: JobType, payload: object, idempotencyKey = `${type}:${JSON.stringify(payload)}`) {
   return prisma.automationJob.upsert({ where: { userId_idempotencyKey: { userId, idempotencyKey } }, update: {}, create: { userId, type, payload, idempotencyKey } });
@@ -74,6 +76,14 @@ async function runHandler(type: JobType, userId: string, payload: unknown) {
     case "generate_quiz":
       // La génération de quiz reste à la demande : POST /api/quizzes. Rien à persister ici.
       return;
+    case "generate_reminders": {
+      // Rappels calculés à la volée : le job journalise leur nombre pour
+      // l'observabilité du cron (/api/automation/worker). Aucun doublon possible
+      // (calcul idempotent, aucune table à écrire).
+      const reminderSummary = await collectReminders(userId);
+      await auditLog(userId, "reminders.generated", { count: reminderSummary.length });
+      return;
+    }
     default:
       throw new Error(`Type de job non supporté: ${type}`);
   }

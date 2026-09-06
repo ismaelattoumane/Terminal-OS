@@ -31,8 +31,11 @@ export async function GET() {
   const averageGrade = weightedAverageOn20(grades);
   const workload = plannedMinutes > 240 || dueHomework.length >= 4 ? "critical" : plannedMinutes > 150 || dueHomework.length >= 3 ? "high" : plannedMinutes > 60 || dueHomework.length >= 1 ? "normal" : "low";
   // B26 : suppression de `subjectStats` (champ mort jamais consommé par le front).
+  // Les révisions en retard (passées, non terminées/non ignorées) sont comptées
+  // pour alimenter le panneau « Rappels » du dashboard.
+  const lateRevisions = await prisma.revisionSession.count({ where: { userId: user.id, status: { in: ["planned", "in_progress"] }, date: { lt: today } } });
   const focus = subjects
     .flatMap((subject) => subject.chapters.map((chapter) => ({ name: chapter.name, mastery: chapter.mastery, subject: { name: subject.name, coefficient: subject.coefficient } })))
     .sort((a, b) => a.mastery - b.mastery)[0] ?? null;
-  return NextResponse.json({ today: { revisions: todayRevisions, homework: dueHomework, evaluations: upcomingEvaluations.slice(0, 3) }, week: { sessions: weekRevisions.length, plannedMinutes }, progression: { mastery: averageMastery, averageGrade }, workload, subjects, focus, alerts: { overdueHomework: dueHomework.filter((homework) => homework.dueDate < today).length, weakChapters: chapters.filter((chapter) => chapter.mastery < 40).length } });
+  return NextResponse.json({ today: { revisions: todayRevisions, homework: dueHomework, evaluations: upcomingEvaluations.slice(0, 3) }, week: { sessions: weekRevisions.length, plannedMinutes }, progression: { mastery: averageMastery, averageGrade }, workload, subjects, focus, alerts: { overdueHomework: dueHomework.filter((homework) => homework.dueDate < today).length, weakChapters: chapters.filter((chapter) => chapter.mastery < 40).length, lateRevisions } });
 }

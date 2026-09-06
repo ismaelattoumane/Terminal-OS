@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enqueueJob, processNextJob } from "@/services/automation";
 
-const jobSchema = z.object({ type: z.enum(["create_revision_plan", "sync_google_calendar", "process_course", "generate_study_sheet", "generate_flashcards", "generate_quiz", "update_mastery", "recalculate_workload"]), payload: z.record(z.string(), z.unknown()).default({}), idempotencyKey: z.string().trim().min(1).max(200).optional() });
+const jobSchema = z.object({ type: z.enum(["create_revision_plan", "sync_google_calendar", "process_course", "generate_study_sheet", "generate_flashcards", "generate_quiz", "update_mastery", "recalculate_workload", "generate_reminders"]), payload: z.record(z.string(), z.unknown()).default({}), idempotencyKey: z.string().trim().min(1).max(200).optional() });
 
 async function currentUserId() {
   const session = await getServerSession(authOptions);

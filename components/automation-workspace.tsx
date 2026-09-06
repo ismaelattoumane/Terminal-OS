@@ -60,10 +60,10 @@ export function AutomationWorkspace() {
   const actionable = jobs.filter((job) => job.status === "failed" || job.status === "pending").length;
 
   return (
-    <div className="workspace-page">
-      <div className="workspace-heading">
+    <div className="">
+      <div className="page-heading">
         <div>
-          <p className="eyebrow">PHASE 2 · AUTOMATISATIONS</p>
+          <p className="eyebrow">AUTOMATISATIONS</p>
           <h1>Automatisations</h1>
           <p className="muted">Jobs idempotents, relançables et journalisés. Point d&apos;entrée : /api/automation/worker avec CRON_SECRET.</p>
         </div>

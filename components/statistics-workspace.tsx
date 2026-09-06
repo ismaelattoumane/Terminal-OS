@@ -27,10 +27,10 @@ export function StatisticsWorkspace() {
   const maxSessionCount = Math.max(1, ...(stats?.sessionsPerWeek.map((week) => week.count) ?? [1]));
 
   return (
-    <div className="workspace-page">
-      <div className="workspace-heading">
+    <div className="">
+      <div className="page-heading">
         <div>
-          <p className="eyebrow">PHASE 7 · STATISTIQUES</p>
+          <p className="eyebrow">STATISTIQUES</p>
           <h1>Statistiques</h1>
           <p className="muted">Moyennes, maîtrise par matière, tendances de charge et d&apos;auto-évaluation.</p>
         </div>

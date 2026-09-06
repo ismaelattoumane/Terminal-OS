@@ -45,8 +45,10 @@ enum RevisionType {
 
 enum RevisionStatus {
   planned
+  in_progress
   completed
   skipped
+  postponed
 }
 
 enum HomeworkStatus {
@@ -78,6 +80,7 @@ enum AutomationJobType {
   generate_quiz
   update_mastery
   recalculate_workload
+  generate_reminders
 }
 
 enum AutomationJobStatus {

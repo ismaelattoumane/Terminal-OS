@@ -1,96 +1,345 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { AlarmClock, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronRight, CirclePlus, ClipboardCheck, LayoutDashboard, LineChart, Menu, MoreHorizontal, Sparkles, Target, Workflow, X } from "lucide-react";
+import { AlarmClock, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronRight, ClipboardCheck, LayoutDashboard, LineChart, LogOut, Menu, MoreHorizontal, Plus, Settings, Sparkles, Target, Terminal, Workflow, X } from "lucide-react";
 import { PhaseOneWorkspace } from "@/components/phase-one-workspace";
 import { CalendarWorkspace } from "@/components/calendar-workspace";
 import { LearningWorkspace } from "@/components/learning-workspace";
 import { StatisticsWorkspace } from "@/components/statistics-workspace";
 import { AutomationWorkspace } from "@/components/automation-workspace";
+import { SettingsWorkspace } from "@/components/settings-workspace";
 import { onReconnect, queuedFetch } from "@/lib/offline-queue";
 
-const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard }, { label: "Cours", icon: BookOpen }, { label: "Évaluations", icon: ClipboardCheck },
-  { label: "Révisions", icon: AlarmClock }, { label: "Calendrier", icon: CalendarDays }, { label: "Fiches", icon: Sparkles },
-  { label: "Flashcards", icon: Target }, { label: "Quiz", icon: Check }, { label: "Statistiques", icon: LineChart },
-  { label: "Automatisations", icon: Workflow }, { label: "Devoirs & notes", icon: ClipboardCheck },
-];
-const sessions = [
-  { time: "17:30", title: "Suites numériques", meta: "Maths · Exercices", tone: "orange", duration: "40 min" },
-  { time: "19:00", title: "La conscience", meta: "Philosophie · Mémorisation", tone: "blue", duration: "25 min" },
-  { time: "20:15", title: "Bases de données", meta: "NSI · Flashcards", tone: "green", duration: "20 min" },
-];
-const subjects = [
-  { name: "Mathématiques", short: "MATHS", mastery: 72, color: "#ff7a45" }, { name: "NSI", short: "NSI", mastery: 84, color: "#4ba3ff" },
-  { name: "Philosophie", short: "PHILO", mastery: 58, color: "#b78cff" }, { name: "Anglais", short: "ANG", mastery: 91, color: "#42c98a" },
-];
-type DashboardData = { today: { revisions: Array<{ id: string; title: string; startTime: string | null; duration: number; subject: { name: string }; type: string }>; homework: Array<{ id: string; title: string; dueDate: string; status: string; subject: { name: string } }>; evaluations: Array<{ id: string; title: string; date: string; subject: { name: string } }> }; week: { sessions: number; plannedMinutes: number }; progression: { mastery: number; averageGrade: number | null }; workload: string; subjects: Array<{ name: string; shortName: string; color: string; chapters: Array<{ name: string; mastery: number }> }>; focus: { name: string; mastery: number; subject: { name: string; coefficient: number } } | null; alerts: { overdueHomework: number; weakChapters: number } };
-type DeadlineItem = { id: string; title: string; meta: string; days: string; tone: string };
-const previewDeadlines: DeadlineItem[] = [
-  { id: "preview-eval-1", title: "Contrôle de Maths", meta: "Suites · 16 septembre", days: "J-12", tone: "orange" },
-  { id: "preview-eval-2", title: "Devoir de philosophie", meta: "Dissertation · 19 septembre", days: "J-15", tone: "purple" },
-  { id: "preview-eval-3", title: "Oral d'anglais", meta: "Expression · 24 septembre", days: "J-20", tone: "green" },
-];
+/* ── Modèles de données (miroir des API) ───────────────────────────────── */
+type Revision = { id: string; title: string; startTime: string | null; duration: number; status: string; type: string; subject: { name: string }; chapter: { name: string } | null };
+type Homework = { id: string; title: string; dueDate: string; status: string; subject: { name: string } };
+type Evaluation = { id: string; title: string; date: string; status: string; subject: { name: string } };
+type DashboardData = {
+  today: { revisions: Revision[]; homework: Homework[]; evaluations: Evaluation[] };
+  week: { sessions: number; plannedMinutes: number };
+  progression: { mastery: number; averageGrade: number | null };
+  workload: string;
+  subjects: Array<{ id: string; name: string; shortName: string; color: string; coefficient: number; chapters: Array<{ name: string; mastery: number }> }>;
+  focus: { name: string; mastery: number; subject: { name: string; coefficient: number } } | null;
+  alerts: { overdueHomework: number; weakChapters: number; lateRevisions: number };
+};
+type Reminder = { id: string; type: string; severity: "high" | "normal"; title: string; detail: string };
 
-export default function Home() {
-  const [active, setActive] = useState("Dashboard");
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [showMobileNav, setShowMobileNav] = useState(false);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [today] = useState(() => new Date());
-  const [dashboardMessage, setDashboardMessage] = useState("");
-  const { data: session, status: authStatus } = useSession();
-  async function loadDashboard() { setDashboardLoading(true); try { const response = await fetch("/api/dashboard"); setDashboard(response.ok ? await response.json() : null); } finally { setDashboardLoading(false); } }
-  useEffect(() => { let cancelled = false; fetch("/api/dashboard").then((response) => response.ok ? response.json() : null).then((data: DashboardData | null) => { if (!cancelled) startTransition(() => { setDashboard(data); setDashboardLoading(false); }); }).catch(() => { if (!cancelled) setDashboardLoading(false); }); return () => { cancelled = true; }; }, [authStatus]);
-  useEffect(() => onReconnect(() => { if (authStatus === "authenticated") loadDashboard(); }), [authStatus]);
-  const displaySessions = dashboard?.today.revisions.map((session) => ({ id: session.id, time: session.startTime ?? "À planifier", title: session.title, meta: `${session.subject.name} · ${session.type}`, tone: "orange", duration: `${session.duration} min` })) ?? (authStatus === "authenticated" ? [] : sessions.map((session, index) => ({ ...session, id: `preview-${index}` })));
-  const displaySubjects = dashboard?.subjects.map((subject) => ({ name: subject.name, short: subject.shortName, mastery: subject.chapters.length ? Math.round(subject.chapters.reduce((total, chapter) => total + chapter.mastery, 0) / subject.chapters.length) : 0, color: subject.color })) ?? (authStatus === "authenticated" ? [] : subjects);
-  const workloadLabel = dashboard ? ({ low: "Faible", normal: "Normale", high: "Élevée", critical: "Critique" }[dashboard.workload] ?? "Normale") : authStatus === "authenticated" ? "Aucune donnée" : "Normale";
-  const nextEvaluation = dashboard?.today.evaluations[0];
-  const daysToEvaluation = nextEvaluation ? Math.max(0, Math.ceil((new Date(nextEvaluation.date).getTime() - today.getTime()) / 86_400_000)) : null;
-  const firstName = session?.user?.name?.split(" ")[0] ?? "Ismaël";
-  const dateLabel = today.toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).toUpperCase();
-  const dateStrip = Array.from({ length: 5 }, (_, index) => { const date = new Date(today); date.setDate(date.getDate() + index); return { key: date.toISOString().slice(0, 10), day: date.toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "").slice(0, 3).toUpperCase(), date: String(date.getDate()).padStart(2, "0") }; });
-  const focus = dashboard?.focus;
-  const focusName = focus?.name ?? (authStatus === "authenticated" ? null : "Suites numériques");
-  const focusMastery = focus?.mastery ?? 72;
-  const focusMeta = focus ? `${focus.subject.name} · Coefficient ${focus.subject.coefficient}` : "Mathématiques · Coefficient 5";
-  function daysUntil(value: string) { return Math.max(0, Math.ceil((new Date(value).getTime() - today.getTime()) / 86_400_000)); }
-  const deadlineRows: Array<DeadlineItem & { time: number }> = dashboard ? [
-    ...dashboard.today.evaluations.map((evaluation) => ({ id: `eval-${evaluation.id}`, time: new Date(evaluation.date).getTime(), title: evaluation.title, meta: `${evaluation.subject.name} · ${new Date(evaluation.date).toLocaleDateString("fr-FR")}`, days: `J-${daysUntil(evaluation.date)}`, tone: "orange" })),
-    ...dashboard.today.homework.map((homework) => ({ id: `hw-${homework.id}`, time: new Date(homework.dueDate).getTime(), title: homework.title, meta: `${homework.subject.name} · Devoir à rendre`, days: new Date(homework.dueDate).getTime() < today.getTime() ? "En retard" : `J-${daysUntil(homework.dueDate)}`, tone: "blue" })),
-  ].sort((a, b) => a.time - b.time) : previewDeadlines.map((item, index) => ({ ...item, time: index }));
-  async function completeRevision(id: string) {
-    const response = await queuedFetch(`/api/revisions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "completed" }) });
-    if (response.status === 202) { setDashboardMessage("Hors ligne : session synchronisée dès la reconnexion."); return; }
-    if (!response.ok) { setDashboardMessage("Impossible de marquer la session comme terminée. Vérifie ta connexion."); return; }
-    setDashboardMessage(""); await loadDashboard();
+/* ── Navigation ─────────────────────────────────────────────────────────── */
+const navPrimary = [
+  { label: "Accueil", icon: LayoutDashboard },
+  { label: "Planning", icon: CalendarDays },
+  { label: "Révisions", icon: AlarmClock },
+  { label: "Cours", icon: BookOpen },
+  { label: "Évaluations", icon: ClipboardCheck },
+  { label: "Matières", icon: Settings },
+  { label: "Notes", icon: Check },
+];
+const navSecondary = [
+  { label: "Fiches", icon: Sparkles },
+  { label: "Flashcards", icon: Target },
+  { label: "Quiz", icon: Check },
+  { label: "Statistiques", icon: LineChart },
+  { label: "Automatisations", icon: Workflow },
+  { label: "Paramètres", icon: Settings },
+];
+const allSections = [...navPrimary, ...navSecondary];
+
+function sectionFor(label: string) {
+  switch (label) {
+    case "Accueil": return null;
+    case "Planning": return <CalendarWorkspace />;
+    case "Révisions": case "Cours": case "Évaluations": case "Matières": case "Notes": return <PhaseOneWorkspace section={label} />;
+    case "Fiches": return <LearningWorkspace mode="sheets" />;
+    case "Flashcards": return <LearningWorkspace mode="flashcards" />;
+    case "Quiz": return <LearningWorkspace mode="quiz" />;
+    case "Statistiques": return <StatisticsWorkspace />;
+    case "Automatisations": return <AutomationWorkspace />;
+    case "Paramètres": return <SettingsWorkspace />;
+    default: return null;
   }
-  return <main className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">T</div><div><strong>TERMINAL</strong><span>OS / 2026</span></div></div>
-      <div className="workspace"><span className="status-dot" /> Espace personnel <ChevronRight size={14} /></div>
-      <nav className="nav-list" aria-label="Navigation principale"><span className="nav-caption">PILOTAGE</span>{navItems.slice(0, 5).map((item) => <NavItem key={item.label} {...item} active={active === item.label} onClick={() => setActive(item.label)} />)}<span className="nav-caption nav-caption-spaced">RESSOURCES</span>{navItems.slice(5).map((item) => <NavItem key={item.label} {...item} active={active === item.label} onClick={() => setActive(item.label)} />)}</nav>
-      <div className="sidebar-bottom"><div className="profile"><div className="avatar">{session?.user?.name?.slice(0, 2).toUpperCase() ?? "IA"}</div><div><strong>{session?.user?.name ?? "Ismaël A."}</strong><span>Terminale · 2026</span></div><MoreHorizontal size={18} /></div></div>
-    </aside>
-    <section className="content-area">
-      <header className="topbar"><button className="icon-button mobile-only" aria-label="Ouvrir le menu" onClick={() => setShowMobileNav(true)}><Menu size={20} /></button><div className="breadcrumb"><span>TERMINAL OS</span><ChevronRight size={14} /><strong>{active.toUpperCase()}</strong></div><div className="top-actions"><span className="sync-label"><span className="status-dot" /> {authStatus === "authenticated" ? "Compte synchronisé" : "Mode aperçu"}</span>{session ? <button className="avatar avatar-top" onClick={() => signOut({ callbackUrl: "/" })} aria-label="Se déconnecter">{session.user?.name?.slice(0, 2).toUpperCase() ?? "IA"}</button> : <button className="secondary-button top-login" onClick={() => signIn("google")}>Connexion</button>}</div></header>
-      {active === "Dashboard" ? <div className="page-content"><div className="page-heading"><div><p className="eyebrow">{dateLabel}</p><h1>Bonjour {firstName}<span className="accent">.</span></h1><p className="muted">Voici ce qui mérite ton attention aujourd&apos;hui.</p>{dashboardMessage && <span className="workspace-message">{dashboardMessage}</span>}</div><button className="primary-button" onClick={() => setShowQuickAdd(true)}><CirclePlus size={18} /> Ajouter</button></div>
-        <section className="metrics-grid"><Metric label="Charge de travail" value={dashboardLoading ? "…" : workloadLabel} detail={dashboard ? `${dashboard.week.sessions} sessions · ${dashboard.week.plannedMinutes} min` : authStatus === "authenticated" ? "Aucune session" : "3 sessions · 1h 25"} icon={<AlarmClock size={18} />} tone="orange" /><Metric label="Progression générale" value={dashboard ? `${dashboard.progression.mastery}%` : authStatus === "authenticated" ? "—" : "76%"} detail={dashboard?.progression.averageGrade ? `Moyenne ${dashboard.progression.averageGrade}/20` : "À calculer"} icon={<ArrowUpRight size={18} />} tone="green" /><Metric label="Prochain contrôle" value={daysToEvaluation === null ? "—" : `J-${daysToEvaluation}`} detail={nextEvaluation ? `${nextEvaluation.subject.name} · ${nextEvaluation.title}` : "Aucun contrôle prévu"} icon={<ClipboardCheck size={18} />} tone="blue" /></section>
-        <div className="dashboard-grid"><section className="panel agenda-panel"><PanelHeader title="À faire aujourd&apos;hui" link="Voir le calendrier" onLinkClick={() => setActive("Calendrier")} /><div className="date-strip">{dateStrip.map((chip, index) => <div className={`date-chip ${index === 0 ? "active" : ""}`} key={chip.key}><span>{chip.day}</span><strong>{chip.date}</strong></div>)}</div><div className="session-list">{displaySessions.length ? displaySessions.map((session) => <div className="session-row" key={session.id}><span className="session-time">{session.time}</span><span className={`session-marker ${session.tone}`} /><div className="session-info"><strong>{session.title}</strong><span>{session.meta}</span></div><span className="session-duration">{session.duration}</span>{authStatus === "authenticated" && <button className="check-button" onClick={() => completeRevision(session.id)} aria-label={`Marquer ${session.title} comme terminé`}><Check size={15} /></button>}</div>) : <p className="empty-state">Aucune révision prévue aujourd&apos;hui.</p>}</div><button className="text-button" onClick={() => setShowQuickAdd(true)}>+ Ajouter une session</button></section>
-          <section className="panel focus-panel"><PanelHeader title="Focus du moment" />{focusName ? (<><div className="focus-visual"><div className="ring"><span>{focusMastery}<small>%</small></span></div><div><p className="eyebrow">CHAPITRE À RENFORCER</p><h3>{focusName}</h3><p className="muted">{focusMeta}</p></div></div><div className="focus-note"><Sparkles size={16} /><span>Deux petites sessions cette semaine devraient suffire à stabiliser ta maîtrise.</span></div><button className="secondary-button" onClick={() => setActive("Révisions")}>Lancer une session <ArrowUpRight size={16} /></button></>) : <p className="empty-state">Ajoute des chapitres à tes matières pour cibler tes révisions.</p>}</section></div>
-        <div className="lower-grid"><section className="panel"><PanelHeader title="Mes matières" link="Gérer les matières" onLinkClick={() => setActive("Cours")} /><div className="subject-list">{displaySubjects.map((subject) => <div className="subject-row" key={subject.name}><span className="subject-icon" style={{ backgroundColor: subject.color }}>{subject.short.slice(0, 2)}</span><div className="subject-name"><strong>{subject.name}</strong><span>{subject.mastery < 60 ? "À renforcer" : subject.mastery < 80 ? "En cours" : "Maîtrisé"}</span></div><div className="progress-track"><span style={{ width: `${subject.mastery}%`, backgroundColor: subject.color }} /></div><strong className="subject-score">{subject.mastery}%</strong><ChevronRight size={16} className="row-chevron" /></div>)}</div></section><section className="panel deadlines"><PanelHeader title="Prochaines échéances" link="Tout voir" onLinkClick={() => setActive("Évaluations")} />{deadlineRows.length ? deadlineRows.map((item) => <Deadline key={item.id} title={item.title} meta={item.meta} days={item.days} tone={item.tone} />) : <p className="empty-state">Aucune échéance dans les 30 prochains jours.</p>}</section></div>
-      </div> : active === "Calendrier" ? <CalendarWorkspace /> : active === "Fiches" ? <LearningWorkspace mode="sheets" /> : active === "Flashcards" ? <LearningWorkspace mode="flashcards" /> : active === "Quiz" ? <LearningWorkspace mode="quiz" /> : active === "Statistiques" ? <StatisticsWorkspace /> : active === "Automatisations" ? <AutomationWorkspace /> : <PhaseOneWorkspace section={active} />}
-    </section>
-    <nav className="bottom-nav">{navItems.slice(0, 5).map((item) => <button key={item.label} className={active === item.label ? "active" : ""} onClick={() => setActive(item.label)}><item.icon size={19} /><span>{item.label === "Évaluations" ? "Évals" : item.label}</span></button>)}</nav>
-    {showQuickAdd && <div className="modal-backdrop" onClick={() => setShowQuickAdd(false)}><div className="quick-modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">ACTION RAPIDE</p><h2>Que veux-tu ajouter ?</h2></div><button className="icon-button" onClick={() => setShowQuickAdd(false)} aria-label="Fermer"><X size={18} /></button></div><div className="quick-actions">{["Un cours", "Un contrôle", "Un devoir", "Une note", "Une révision"].map((label, index) => <button key={label} onClick={() => { setShowQuickAdd(false); setActive(label === "Un contrôle" ? "Évaluations" : label === "Un cours" ? "Cours" : label === "Un devoir" || label === "Une note" ? "Devoirs & notes" : "Révisions"); }}><span className={`quick-icon q-${index}`}><CirclePlus size={17} /></span><strong>{label}</strong><ChevronRight size={16} /></button>)}</div></div></div>}
-    {showMobileNav && <div className="modal-backdrop" onClick={() => setShowMobileNav(false)}><div className="quick-modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">NAVIGATION</p><h2>Toutes les sections</h2></div><button className="icon-button" onClick={() => setShowMobileNav(false)} aria-label="Fermer"><X size={18} /></button></div><div className="quick-actions">{navItems.map((item, index) => <button key={item.label} onClick={() => { setActive(item.label); setShowMobileNav(false); }}><span className={`quick-icon q-${index % 5}`}><item.icon size={17} /></span><strong>{item.label}</strong><ChevronRight size={16} /></button>)}</div></div></div>}
-  </main>;
 }
 
-function NavItem({ label, icon: Icon, active, onClick }: { label: string; icon: typeof LayoutDashboard; active: boolean; onClick: () => void }) { return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}><Icon size={18} /><span>{label}</span>{active && <span className="nav-active-dot" />}</button>; }
-function Metric({ label, value, detail, icon, tone }: { label: string; value: string; detail: string; icon: React.ReactNode; tone: string }) { return <div className="metric"><div className={`metric-icon ${tone}`}>{icon}</div><div><p>{label}</p><strong>{value}</strong><span>{detail}</span></div></div>; }
-function PanelHeader({ title, link, onLinkClick }: { title: string; link?: string; onLinkClick?: () => void }) { return <div className="panel-header"><h2>{title}</h2>{link && <button className="panel-link" onClick={onLinkClick}>{link}<ArrowUpRight size={14} /></button>}</div>; }
-function Deadline({ title, meta, days, tone }: { title: string; meta: string; days: string; tone: string }) { return <div className="deadline-row"><span className={`deadline-line ${tone}`} /><div><strong>{title}</strong><span>{meta}</span></div><b>{days}</b></div>; }
+export default function Home() {
+  const { data: session, status: authStatus } = useSession();
+  const [active, setActive] = useState("Accueil");
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showNavMenu, setShowNavMenu] = useState(false);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState("");
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [feedback, setFeedback] = useState("");
+
+  const authenticated = authStatus === "authenticated";
+const loadDashboard = useCallback(async () => {
+    if (authStatus !== "authenticated") return;
+    setDashboardLoading(true);
+    setDashboardError("");
+    try {
+      const [dashboardResponse, reminderResponse] = await Promise.all([fetch("/api/dashboard"), fetch("/api/reminders")]);
+      if (dashboardResponse.ok) setDashboard(await dashboardResponse.json() as DashboardData);
+      if (reminderResponse.ok) setReminders(await reminderResponse.json() as Reminder[]);
+    } catch {
+      setDashboardError("Impossible de charger ton tableau de bord. Vérifie ta connexion.");
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [authStatus]);
+
+  useEffect(() => { void loadDashboard(); }, [loadDashboard]);
+  useEffect(() => { return onReconnect(loadDashboard); }, [loadDashboard]);
+  useEffect(() => { if (feedback) { const timer = setTimeout(() => setFeedback(""), 4000); return () => clearTimeout(timer); } }, [feedback]);
+
+  async function completeRevision(id: string, title: string) {
+    const response = await queuedFetch(`/api/revisions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "completed" }) });
+    if (response.status === 202) { setFeedback(`« ${title} » terminée (synchronisée à la reconnexion).`); await loadDashboard(); return; }
+    if (response.ok) { setFeedback(`Révision « ${title} » terminée.`); await loadDashboard(); }
+    else setFeedback("Impossible de terminer cette révision.");
+  }
+
+  function openAdd(label: string) {
+    setShowQuickAdd(false);
+    setActive(label === "Un contrôle" ? "Évaluations" : label === "Un cours" ? "Cours" : label === "Un devoir" || label === "Une note" ? "Notes" : "Révisions");
+  }
+
+  function go(label: string) { setActive(label); setShowNavMenu(false); }
+
+  /* Non connecté : CTA de connexion au lieu de données factices. */
+  if (authStatus !== "authenticated" && authStatus !== "loading") {
+    return (
+      <main className="login-page">
+        <div className="login-card">
+          <div className="brand-mark"><Terminal size={19} /></div>
+          <p className="eyebrow">TERMINAL OS / ACCÈS</p>
+          <h1>Ton année, en contrôle<span className="accent">.</span></h1>
+          <p className="muted">Connecte-toi pour retrouver tes cours, tes révisions et ta progression sur tous tes appareils.</p>
+          <button className="primary-button login-button" onClick={() => signIn("google")}>Continuer avec Google</button>
+          <small>Les données restent isolées dans ton compte.</small>
+        </div>
+      </main>
+    );
+  }
+
+  const firstName = session?.user?.name?.split(/\s+/)[0] ?? "";
+  const initial = (session?.user?.name ?? "?")[0]?.toUpperCase() ?? "?";
+  const todayLabel = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+return (
+    <div className="app-shell">
+      {/* Sidebar desktop */}
+      <aside className="sidebar">
+        <div className="brand"><span className="brand-mark"><Terminal size={17} /></span><div><strong>TERMINAL OS</strong><span>COCKPIT TERMINALE</span></div></div>
+        <span className="nav-caption">Piloter</span>
+        <nav className="nav-list" aria-label="Sections principales">
+          {navPrimary.map((item) => <NavItem key={item.label} label={item.label} icon={item.icon} active={active === item.label} onClick={() => go(item.label)} />)}
+        </nav>
+        <span className="nav-caption" style={{ marginTop: 18 }}>Apprendre &amp; analyser</span>
+        <nav className="nav-list" aria-label="Sections secondaires">
+          {navSecondary.map((item) => <NavItem key={item.label} label={item.label} icon={item.icon} active={active === item.label} onClick={() => go(item.label)} />)}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="profile">
+            <span className="avatar">{initial}</span>
+            <div><strong>{session?.user?.name ?? "Compte"}</strong><span>{session?.user?.email}</span></div>
+            <button className="icon-button" onClick={() => signOut()} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={16} /></button>
+          </div>
+        </div>
+      </aside>
+
+      <section className="content-area">
+        <header className="topbar">
+          <div className="breadcrumb">
+            <button className="icon-button mobile-only" onClick={() => setShowNavMenu(true)} aria-label="Ouvrir le menu des sections"><Menu size={18} /></button>
+            <span>Terminal OS</span><span aria-hidden="true">/</span><strong>{active}</strong>
+          </div>
+          <div className="top-actions">
+            <button className="primary-button" onClick={() => setShowQuickAdd(true)}><Plus size={16} /> Ajouter</button>
+            <button className="icon-button" onClick={() => go("Paramètres")} aria-label="Paramètres"><Settings size={18} /></button>
+            <span className="avatar-top" aria-hidden="true">{initial}</span>
+          </div>
+        </header>
+
+        {feedback && <div className="state-message state-success" role="status" style={{ margin: "12px 22px 0", maxWidth: 720 }}>{feedback}</div>}
+
+        <main className="page-content">
+          {active === "Accueil" ? (
+            <>
+              <div className="dash-greeting">
+                <p className="eyebrow">{todayLabel}</p>
+                <h1>{authenticated ? `Bonjour ${firstName || "—"}.` : "Chargement…"}</h1>
+                <p className="muted">Voici ce qu&apos;il y a à faire maintenant.</p>
+              </div>
+              {dashboardError && <div className="state-message state-error" role="alert" style={{ marginBottom: 16 }}>{dashboardError}<button className="ghost-button" onClick={() => void loadDashboard()}>Réessayer</button></div>}
+              {dashboardLoading && !dashboard ? (
+                <div className="dash-grid">
+                  <div className="dash-stack">
+                    <div className="panel"><div className="panel-header"><h2>À faire aujourd&apos;hui</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div></div>
+                    <div className="panel"><div className="panel-header"><h2>Prochain contrôle</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
+                  </div>
+                  <div className="dash-stack">
+                    <div className="panel"><div className="panel-header"><h2>Rappels</h2></div><div className="panel-body"><span className="skeleton" /><span className="skeleton" /></div></div>
+                    <div className="panel"><div className="panel-header"><h2>Progression</h2></div><div className="panel-body"><span className="skeleton" /></div></div>
+                  </div>
+                </div>
+              ) : dashboard ? (
+                <Dashboard key="dash" data={dashboard} reminders={reminders} onComplete={(id, title) => void completeRevision(id, title)} onNavigate={(label) => go(label)} />
+              ) : null}
+            </>
+          ) : sectionFor(active)}
+        </main>
+      </section>
+
+      {/* Bottom navigation mobile */}
+      <nav className="bottom-nav" aria-label="Navigation mobile">
+        {navPrimary.slice(0, 4).map((item) => { const Icon = item.icon; return (
+          <button key={item.label} className={active === item.label ? "active" : ""} onClick={() => go(item.label)} aria-current={active === item.label ? "page" : undefined}>
+            <Icon size={19} /><span>{item.label}</span>
+          </button>
+        ); })}
+        <button className={allSections.some((item) => item.label === active && !navPrimary.slice(0, 4).some((p) => p.label === active)) ? "active" : ""} onClick={() => setShowNavMenu(true)} aria-label="Toutes les sections"><MoreHorizontal size={19} /><span>Plus</span></button>
+      </nav>
+
+      {showQuickAdd && <QuickAddModal onClose={() => setShowQuickAdd(false)} onPick={openAdd} />}
+      {showNavMenu && <NavMenuModal onClose={() => setShowNavMenu(false)} onPick={go} active={active} />}
+    </div>
+  );
+}
+/* ── Dashboard ──────────────────────────────────────────────────────────── */
+function Dashboard({ data, reminders, onComplete, onNavigate }: {
+  data: DashboardData; reminders: Reminder[]; onComplete: (id: string, title: string) => void; onNavigate: (label: string) => void;
+}) {
+  const today = new Date();
+  const nextEvaluation = data.today.evaluations[0];
+  const daysUntil = nextEvaluation ? Math.max(0, Math.ceil((new Date(nextEvaluation.date).getTime() - today.getTime()) / 86_400_000)) : null;
+  const dayLabel = (value: Date) => {
+    const diff = Math.ceil((value.getTime() - today.getTime()) / 86_400_000);
+    if (diff < 0) return "En retard";
+    if (diff === 0) return "Aujourd'hui";
+    if (diff === 1) return "Demain";
+    if (diff <= 7) return `J-${diff}`;
+    return new Date(value).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  };
+  const deadlineRows = [
+    ...data.today.evaluations.map((evaluation) => ({ id: `eval-${evaluation.id}`, title: evaluation.title, meta: `${evaluation.subject.name} · contrôle`, days: dayLabel(new Date(evaluation.date)), tone: "orange" })),
+    ...data.today.homework.filter((homework) => homework.status !== "completed").map((homework) => ({ id: `hw-${homework.id}`, title: homework.title, meta: `${homework.subject.name} · devoir`, days: dayLabel(new Date(homework.dueDate)), tone: new Date(homework.dueDate) < today ? "red" : "purple" })),
+  ].slice(0, 5);
+  const weakChapters = data.subjects.flatMap((subject) => subject.chapters.map((chapter) => ({ ...chapter, subjectName: subject.name }))).sort((a, b) => a.mastery - b.mastery).slice(0, 3);
+
+  return (
+    <div className="dash-grid">
+      <div className="dash-stack">
+        {data.alerts.lateRevisions > 0 && (
+          <div className="state-message state-warning" role="alert"><strong>{data.alerts.lateRevisions} révision(s) en retard.</strong><button className="ghost-button" onClick={() => onNavigate("Révisions")}>Voir</button></div>
+        )}
+        {data.alerts.overdueHomework > 0 && (
+          <div className="state-message state-error" role="alert"><strong>{data.alerts.overdueHomework} devoir(s) en retard.</strong><button className="ghost-button" onClick={() => onNavigate("Notes")}>Gérer</button></div>
+        )}
+
+        <section className="panel">
+          <div className="panel-header"><h2>À faire aujourd&apos;hui</h2><button className="panel-link" onClick={() => onNavigate("Révisions")}>Tout voir<ArrowUpRight size={13} /></button></div>
+          <div className="panel-body">
+            {data.today.revisions.length ? data.today.revisions.map((revision) => (
+              <div className="daily-item" key={revision.id}>
+                <span className="time">{revision.startTime ?? "—"}</span>
+                <div className="body"><strong>{revision.title}</strong><span>{revision.subject.name} · {revision.duration} min{revision.status === "planned" ? "" : ` · ${revision.status}`}</span></div>
+                <div className="actions">
+                  {revision.status === "planned" && <button className="complete-button" onClick={() => onComplete(revision.id, revision.title)} aria-label={`Terminer ${revision.title}`}><Check size={14} /> Terminer</button>}
+                </div>
+              </div>
+            )) : (
+              <div className="state-empty"><strong>Aucune révision aujourd&apos;hui.</strong><span>Ajoute un contrôle pour générer ton planning automatiquement.</span><button className="ghost-button" onClick={() => onNavigate("Évaluations")}>Ajouter un contrôle</button></div>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header"><h2>{nextEvaluation ? "Prochain contrôle" : "Prochaines échéances"}</h2><button className="panel-link" onClick={() => onNavigate("Évaluations")}>Tout voir<ArrowUpRight size={13} /></button></div>
+          {nextEvaluation && daysUntil !== null ? (
+            <div className="focus-card" style={{ margin: 16 }}>
+              <h2>{nextEvaluation.subject.name} · contrôle</h2>
+              <div className="focus-name">{nextEvaluation.title}</div>
+              <span>{daysUntil === 0 ? "C'est aujourd'hui !" : `Dans ${daysUntil} jour${daysUntil > 1 ? "s" : ""}`} — termine les révisions planifiées.</span>
+            </div>
+          ) : null}
+          <div className="panel-body">
+            {deadlineRows.length ? deadlineRows.map((item) => <div className="deadline-row" key={item.id}><span className={`deadline-line ${item.tone}`} /><div><strong>{item.title}</strong><span>{item.meta}</span></div><b>{item.days}</b></div>) : <div className="state-empty"><strong>Aucune échéance à venir.</strong><span>Ajoute un contrôle ou un devoir pour les voir apparaître ici.</span></div>}
+          </div>
+        </section>
+
+        {data.focus && (
+          <section className="panel">
+            <div className="panel-header"><h2>Chapitre prioritaire</h2><button className="panel-link" onClick={() => onNavigate("Matières")}>Matières<ArrowUpRight size={13} /></button></div>
+            <div className="panel-body"><div className="reminder-row"><span className="rem-icon"><Sparkles size={15} color="var(--purple)" /></span><div><strong>{data.focus.name}</strong><span>{data.focus.subject.name} · maîtrise {data.focus.mastery}%</span></div></div></div>
+          </section>
+        )}
+      </div>
+<div className="dash-stack">
+        <section className="panel">
+          <div className="panel-header"><h2>Rappels</h2><span>{reminders.length}</span></div>
+          <div className="panel-body">
+            {reminders.length ? reminders.map((reminder) => (
+              <div className="reminder-row" key={reminder.id}><span className={`rem-icon ${reminder.severity === "high" ? "high" : ""}`}><AlarmClock size={15} color={reminder.severity === "high" ? "var(--red)" : "var(--muted)"} /></span><div><strong>{reminder.title}</strong><span>{reminder.detail}</span></div></div>
+            )) : <div className="state-empty"><strong>Tout est calme.</strong><span>Les rappels de contrôles, révisions et devoirs apparaîtront ici.</span></div>}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header"><h2>Progression</h2></div>
+          <div className="panel-body">
+            <div className="bar-item"><div className="bar-label"><strong>Maîtrise moyenne</strong><span>{data.progression.mastery}%</span></div><div className="bar-track"><span className="bar-fill" style={{ width: `${Math.min(100, data.progression.mastery)}%`, backgroundColor: "var(--green)" }} /></div></div>
+            {data.progression.averageGrade != null && <div className="bar-item"><div className="bar-label"><strong>Moyenne générale</strong><span>{data.progression.averageGrade}/20</span></div><div className="bar-track"><span className="bar-fill" style={{ width: `${Math.min(100, data.progression.averageGrade * 5)}%`, backgroundColor: "var(--blue)" }} /></div></div>}
+            <div className="bar-item"><div className="bar-label"><strong>Sessions planifiées (7 j)</strong><span>{data.week.sessions} · {Math.round(data.week.plannedMinutes / 60 * 10) / 10} h</span></div></div>
+            <div className="bar-item"><div className="bar-label"><strong>Chapitres faibles</strong><span>{data.alerts.weakChapters}</span></div></div>
+            {weakChapters.length > 0 && <p className="chart-muted" style={{ marginTop: 10 }}>Priorités : {weakChapters.map((chapter) => chapter.name).join(" · ")}</p>}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header"><h2>Matières</h2><button className="panel-link" onClick={() => onNavigate("Matières")}>Gérer<ArrowUpRight size={13} /></button></div>
+          <div className="panel-body">
+            {data.subjects.length ? data.subjects.map((subject) => (
+              <div className="subject-row" key={subject.id}><span className="dot" style={{ backgroundColor: subject.color }} /><span className="name">{subject.name}</span><span className="mastery">{subject.chapters.length ? `${Math.round(subject.chapters.reduce((sum, chapter) => sum + chapter.mastery, 0) / subject.chapters.length)}%` : "—"}</span></div>
+            )) : <div className="state-empty"><strong>Aucune matière.</strong><span>Crée ta première matière avec son premier chapitre.</span><button className="ghost-button" onClick={() => onNavigate("Matières")}>Créer une matière</button></div>}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+function NavItem({ label, icon: Icon, active, onClick }: { label: string; icon: typeof LayoutDashboard; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}>
+      <Icon size={18} aria-hidden="true" /><span>{label}</span>{active && <span className="nav-active-dot" />}
+    </button>
+  );
+}
+
+function QuickAddModal({ onClose, onPick }: { onClose: () => void; onPick: (label: string) => void }) {
+  const items = ["Un cours", "Un contrôle", "Un devoir", "Une note", "Une révision"];
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <div className="quick-modal" role="dialog" aria-modal="true" aria-label="Ajouter rapidement" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-heading"><div><p className="eyebrow">ACTION RAPIDE</p><h2>Que veux-tu ajouter ?</h2></div><button className="icon-button" onClick={onClose} aria-label="Fermer"><X size={18} /></button></div>
+        <div className="quick-actions">
+          {items.map((label, index) => <button key={label} onClick={() => onPick(label)}><span className={`quick-icon q-${index % 5}`}><Plus size={16} /></span><strong>{label}</strong><ChevronRight size={16} /></button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NavMenuModal({ onClose, onPick, active }: { onClose: () => void; onPick: (label: string) => void; active: string }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <div className="quick-modal" role="dialog" aria-modal="true" aria-label="Toutes les sections" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-heading"><div><p className="eyebrow">NAVIGATION</p><h2>Toutes les sections</h2></div><button className="icon-button" onClick={onClose} aria-label="Fermer"><X size={18} /></button></div>
+        <div className="quick-actions">
+          {allSections.map((item, index) => { const Icon = item.icon; return (
+            <button key={item.label} onClick={() => onPick(item.label)}><span className={`quick-icon q-${index % 5}`}><Icon size={17} /></span><strong>{item.label}</strong>{active === item.label ? <span className="status-badge completed">Actif</span> : <ChevronRight size={16} />}</button>
+          ); })}
+        </div>
+      </div>
+    </div>
+  );
+}

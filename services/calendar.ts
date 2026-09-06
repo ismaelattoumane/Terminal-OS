@@ -87,3 +87,28 @@ export async function deleteRevisionFromGoogleCalendar(accessToken: string, revi
   await prisma.revisionSession.update({ where: { id: revisionId }, data: { calendarEventId: null } });
   return true;
 }
+
+/**
+ * Supprime côté Google les événements appartenant à une liste d'identifiants
+ * d'événements NOUVELLE (nettoyage d'orphelins : sessions régénérées, révisions
+ * supprimées, évaluations annulées). Best effort : un échec Google ne fait pas
+ * échouer l'opération locale ; l'événement absent (404) est considéré comme
+ * déjà supprimé. La modification de l'événement distant suffit à garantir
+ * l'idempotence (rien n'est recréé).
+ */
+export async function deleteGoogleEvents(accessToken: string | undefined, calendarEventIds: Array<string | null>): Promise<number> {
+  if (!accessToken) return 0;
+  const ids = calendarEventIds.filter((id): id is string => Boolean(id));
+  if (!ids.length) return 0;
+  let deleted = 0;
+  for (const id of ids) {
+    try {
+      const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+      if (response.ok || response.status === 404) deleted += 1;
+    } catch {
+      // Token expiré / réseau : on continue ; la prochaine synchronisation pourra
+      // recréer un état cohérent car l'événement local a déjà été retiré.
+    }
+  }
+  return deleted;
+}

@@ -99,10 +99,10 @@ export function CalendarWorkspace() {
   }
 
   return (
-    <div className="workspace-page">
-      <div className="workspace-heading">
+    <div className="">
+      <div className="page-heading">
         <div>
-          <p className="eyebrow">PHASE 2 · CALENDRIER INTERNE + GOOGLE</p>
+          <p className="eyebrow">CALENDRIER</p>
           <h1>Calendrier</h1>
           <p className="muted">Planifie tes événements, protège tes créneaux de révision et synchronise Google Calendar.</p>
         </div>

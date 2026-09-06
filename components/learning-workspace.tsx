@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, startTransition, useEffect, useState } from "react";
-import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { answersMatch } from "@/lib/answer-matching";
 
 type Subject = { id: string; name: string };
@@ -18,6 +18,7 @@ export function LearningWorkspace({ mode }: { mode: "sheets" | "flashcards" | "q
   const [courses, setCourses] = useState<Course[]>([]);
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [allCards, setAllCards] = useState<Card[]>([]);
   const [subjectId, setSubjectId] = useState("");
   const [chapterId, setChapterId] = useState("");
   const [courseIds, setCourseIds] = useState<string[]>([]);
@@ -27,29 +28,32 @@ export function LearningWorkspace({ mode }: { mode: "sheets" | "flashcards" | "q
   const [expandedSheet, setExpandedSheet] = useState<string | null>(null);
 
   async function load() {
-    const [subjectResponse, chapterResponse, courseResponse, sheetResponse, cardResponse] = await Promise.all([fetch("/api/subjects"), fetch("/api/chapters"), fetch("/api/courses"), fetch("/api/study-sheets"), fetch("/api/flashcards")]);
+    const [subjectResponse, chapterResponse, courseResponse, sheetResponse, cardResponse, allCardResponse] = await Promise.all([fetch("/api/subjects"), fetch("/api/chapters"), fetch("/api/courses"), fetch("/api/study-sheets"), fetch("/api/flashcards"), fetch("/api/flashcards?scope=all")]);
     if (subjectResponse.ok) setSubjects(await subjectResponse.json());
     if (chapterResponse.ok) setChapters(await chapterResponse.json());
     if (courseResponse.ok) setCourses(await courseResponse.json());
     if (sheetResponse.ok) setSheets(await sheetResponse.json());
     if (cardResponse.ok) setCards(await cardResponse.json());
+    if (allCardResponse.ok) setAllCards(await allCardResponse.json());
   }
 
   useEffect(() => {
 let cancelled = false;
-    Promise.all([fetch("/api/subjects"), fetch("/api/chapters"), fetch("/api/courses"), fetch("/api/study-sheets"), fetch("/api/flashcards")])
-      .then(async ([subjectResponse, chapterResponse, courseResponse, sheetResponse, cardResponse]) => {
+    Promise.all([fetch("/api/subjects"), fetch("/api/chapters"), fetch("/api/courses"), fetch("/api/study-sheets"), fetch("/api/flashcards"), fetch("/api/flashcards?scope=all")])
+      .then(async ([subjectResponse, chapterResponse, courseResponse, sheetResponse, cardResponse, allCardResponse]) => {
         const subjectData = subjectResponse.ok ? await subjectResponse.json() : [];
         const chapterData = chapterResponse.ok ? await chapterResponse.json() : [];
         const courseData = courseResponse.ok ? await courseResponse.json() : [];
         const sheetData = sheetResponse.ok ? await sheetResponse.json() : [];
         const cardData = cardResponse.ok ? await cardResponse.json() : [];
-        if (!cancelled) startTransition(() => { setSubjects(subjectData); setChapters(chapterData); setCourses(courseData); setSheets(sheetData); setCards(cardData); });
+        const allCardData = allCardResponse.ok ? await allCardResponse.json() : [];
+        if (!cancelled) startTransition(() => { setSubjects(subjectData); setChapters(chapterData); setCourses(courseData); setSheets(sheetData); setCards(cardData); setAllCards(allCardData); });
       })
       .catch(() => { if (!cancelled) setFeedback("Connecte-toi pour utiliser cet espace."); });
     return () => { cancelled = true; };
   }, []);
 async function generateSheet(event: FormEvent) {
+
     event.preventDefault();
     if (!courseIds.length) { setFeedback("Sélectionne au moins un cours."); return; }
     setBusy(true);
@@ -67,10 +71,36 @@ async function generateSheet(event: FormEvent) {
     if (response.ok) await load();
   }
 
+  // Édition réelle d'une fiche (titre + contenu) persistée en base (PATCH).
+  async function editSheet(id: string, payload: { title?: string; summary?: string; keyIdeas?: string[] }) {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/study-sheets/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(payload.title !== undefined ? { title: payload.title } : {}), content: { ...(payload.summary !== undefined ? { summary: payload.summary } : {}), ...(payload.keyIdeas !== undefined ? { keyIdeas: payload.keyIdeas } : {}) } }) });
+      setFeedback(response.ok ? "Fiche mise à jour." : "Mise à jour impossible.");
+      if (response.ok) await load();
+    } finally { setBusy(false); }
+  }
+
   async function reviewCard(id: string, quality: 1 | 2 | 3) {
     const response = await fetch(`/api/flashcards/${id}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) });
     if (response.ok) { setRevealed(null); await load(); }
     else setFeedback("Action impossible. Vérifie ta connexion.");
+  }
+
+  async function editCard(id: string, question: string, answer: string) {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/flashcards/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, answer }) });
+      setFeedback(response.ok ? "Carte mise à jour." : "Mise à jour impossible.");
+      if (response.ok) await load();
+    } finally { setBusy(false); }
+  }
+
+  async function deleteCard(id: string) {
+    if (!window.confirm("Supprimer cette flashcard ? Cette action est définitive.")) return;
+    const response = await fetch(`/api/flashcards/${id}`, { method: "DELETE" });
+    setFeedback(response.ok ? "Carte supprimée." : "Suppression impossible.");
+    if (response.ok) await load();
   }
 
   // B05 : création manuelle ou génération IA de flashcards via POST /api/flashcards.
@@ -100,26 +130,30 @@ async function generateSheet(event: FormEvent) {
   const title = mode === "sheets" ? "Fiches de révision" : mode === "flashcards" ? "Flashcards" : "Quiz d'auto-évaluation";
 
   return (
-    <div className="workspace-page">
-      <div className="workspace-heading">
+    <div>
+      <div className="page-heading">
         <div>
-          <p className="eyebrow">PHASE 5 · APPRENTISSAGE</p>
+          <p className="eyebrow">APPRENTISSAGE</p>
           <h1>{title}</h1>
           <p className="muted">{subtitle}</p>
         </div>
         {feedback && <span className="workspace-message">{feedback}</span>}
       </div>
-      {mode === "sheets" && <SheetManager subjects={subjects} chapters={chapters} courses={courses} sheets={sheets} subjectId={subjectId} setSubjectId={changeSubject} chapterId={chapterId} setChapterId={setChapterId} courseIds={courseIds} toggleCourse={toggleCourse} generateSheet={generateSheet} deleteSheet={deleteSheet} busy={busy} expandedSheet={expandedSheet} setExpandedSheet={setExpandedSheet} />}
-      {mode === "flashcards" && <FlashcardManager cards={cards} subjects={subjects} chapters={chapters} courses={courses} onGenerate={createCard} busy={busy} revealed={revealed} setRevealed={setRevealed} reviewCard={reviewCard} />}
+      {mode === "sheets" && <SheetManager subjects={subjects} chapters={chapters} courses={courses} sheets={sheets} subjectId={subjectId} setSubjectId={changeSubject} chapterId={chapterId} setChapterId={setChapterId} courseIds={courseIds} toggleCourse={toggleCourse} generateSheet={generateSheet} deleteSheet={deleteSheet} editSheet={editSheet} busy={busy} expandedSheet={expandedSheet} setExpandedSheet={setExpandedSheet} />}
+      {mode === "flashcards" && <FlashcardManager cards={cards} allCards={allCards} subjects={subjects} chapters={chapters} courses={courses} onGenerate={createCard} busy={busy} revealed={revealed} setRevealed={setRevealed} reviewCard={reviewCard} editCard={editCard} deleteCard={deleteCard} />}
       {mode === "quiz" && <QuizManager subjects={subjects} chapters={chapters} courses={courses} subjectId={subjectId} setSubjectId={setSubjectId} chapterId={chapterId} setChapterId={setChapterId} setCourseId={(courseId: string) => setCourseIds(courseId ? [courseId] : [])} courseId={courseIds[0] ?? ""} />}
     </div>
   );
 }
-function SheetManager({ subjects, chapters, courses, sheets, subjectId, setSubjectId, chapterId, setChapterId, courseIds, toggleCourse, generateSheet, deleteSheet, busy, expandedSheet, setExpandedSheet }: {
-  subjects: Subject[]; chapters: Chapter[]; courses: Course[]; sheets: Sheet[]; subjectId: string; setSubjectId: (value: string) => void; chapterId: string; setChapterId: (value: string) => void; courseIds: string[]; toggleCourse: (id: string) => void; generateSheet: (event: FormEvent) => Promise<void>; deleteSheet: (id: string) => Promise<void>; busy: boolean; expandedSheet: string | null; setExpandedSheet: (id: string | null) => void;
+function SheetManager({ subjects, chapters, courses, sheets, subjectId, setSubjectId, chapterId, setChapterId, courseIds, toggleCourse, generateSheet, deleteSheet, editSheet, busy, expandedSheet, setExpandedSheet }: {
+  subjects: Subject[]; chapters: Chapter[]; courses: Course[]; sheets: Sheet[]; subjectId: string; setSubjectId: (value: string) => void; chapterId: string; setChapterId: (value: string) => void; courseIds: string[]; toggleCourse: (id: string) => void; generateSheet: (event: FormEvent) => Promise<void>; deleteSheet: (id: string) => Promise<void>; editSheet: (id: string, payload: { title?: string; summary?: string; keyIdeas?: string[] }) => Promise<void>; busy: boolean; expandedSheet: string | null; setExpandedSheet: (id: string | null) => void;
 }) {
   const filteredCourses = courses.filter((course) => !subjectId || course.subjectId === subjectId);
   const filteredChapters = chapters.filter((chapter) => !subjectId || chapter.subjectId === subjectId);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSummary, setEditSummary] = useState("");
+  const [editIdeas, setEditIdeas] = useState("");
   return (
     <>
       <form className="data-form wide-form" onSubmit={generateSheet}>
@@ -160,12 +194,24 @@ function SheetManager({ subjects, chapters, courses, sheets, subjectId, setSubje
               <div className="item-actions">
                 <span>{new Date(sheet.createdAt).toLocaleDateString("fr-FR")}</span>
                 <button className="skip-button" onClick={() => setExpandedSheet(expandedSheet === sheet.id ? null : sheet.id)}>{expandedSheet === sheet.id ? "Réduire" : "Détail"} <ChevronDown size={14} /></button>
+                <button className="skip-button" onClick={() => { if (editing === sheet.id) { setEditing(null); return; } setEditing(sheet.id); setEditTitle(sheet.title); setEditSummary(sheet.content.summary ?? ""); setEditIdeas((sheet.content.keyIdeas ?? []).join("\n")); }} aria-label={`Modifier ${sheet.title}`}>{editing === sheet.id ? "Annuler" : "Modifier"}</button>
                 <button className="delete-button" onClick={() => deleteSheet(sheet.id)} aria-label={`Supprimer ${sheet.title}`}><Trash2 size={15} /></button>
               </div>
             </div>
-            <p className="muted">{sheet.content.summary}</p>
-            {sheet.content.keyIdeas?.slice(0, 3).map((idea) => <p className="learning-point" key={idea}>• {idea}</p>)}
-            {expandedSheet === sheet.id && <SheetDetail content={sheet.content} />}
+            {editing === sheet.id ? (
+              <div style={{ padding: "0 18px 14px", display: "grid", gap: 10 }}>
+                <label>Titre<input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} /></label>
+                <label>Résumé<textarea value={editSummary} onChange={(event) => setEditSummary(event.target.value)} style={{ minHeight: 70 }} /></label>
+                <label>Idées clés (une par ligne)<textarea value={editIdeas} onChange={(event) => setEditIdeas(event.target.value)} style={{ minHeight: 90 }} /></label>
+                <button className="primary-button" disabled={busy} onClick={() => { void editSheet(sheet.id, { title: editTitle.trim() || sheet.title, summary: editSummary, keyIdeas: editIdeas.split("\n").map((line) => line.trim()).filter(Boolean) }).then(() => setEditing(null)); }}>Enregistrer la fiche</button>
+              </div>
+            ) : (
+              <>
+                <p className="muted">{sheet.content.summary}</p>
+                {sheet.content.keyIdeas?.slice(0, 3).map((idea) => <p className="learning-point" key={idea}>• {idea}</p>)}
+                {expandedSheet === sheet.id && <SheetDetail content={sheet.content} />}
+              </>
+            )}
           </article>
         )) : <p className="empty-state">Aucune fiche pour le moment. Génère-en une depuis tes cours.</p>}
       </div>
@@ -191,7 +237,10 @@ function SheetDetail({ content }: { content: SheetContent }) {
     </div>
   );
 }
-function FlashcardManager({ cards, subjects, chapters, courses, onGenerate, busy, revealed, setRevealed, reviewCard }: { cards: Card[]; subjects: Subject[]; chapters: Chapter[]; courses: Course[]; onGenerate: (payload: { chapterId: string; courseId?: string; question?: string; answer?: string }) => Promise<void>; busy: boolean; revealed: string | null; setRevealed: (id: string | null) => void; reviewCard: (id: string, quality: 1 | 2 | 3) => Promise<void> }) {
+function FlashcardManager({ cards, allCards, subjects, chapters, courses, onGenerate, busy, revealed, setRevealed, reviewCard, editCard, deleteCard }: { cards: Card[]; allCards: Card[]; subjects: Subject[]; chapters: Chapter[]; courses: Course[]; onGenerate: (payload: { chapterId: string; courseId?: string; question?: string; answer?: string }) => Promise<void>; busy: boolean; revealed: string | null; setRevealed: (id: string | null) => void; reviewCard: (id: string, quality: 1 | 2 | 3) => Promise<void>; editCard: (id: string, question: string, answer: string) => Promise<void>; deleteCard: (id: string) => Promise<void> }) {
+  const [editingCard, setEditingCard] = useState<string | null>(null);
+  const [editQuestion, setEditQuestion] = useState("");
+  const [editAnswer, setEditAnswer] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [chapterId, setChapterId] = useState("");
   const [courseId, setCourseId] = useState("");
@@ -246,6 +295,35 @@ function FlashcardManager({ cards, subjects, chapters, courses, onGenerate, busy
             </>}
           </article>
         )) : <p className="empty-state">Aucune carte à réviser pour le moment. Crée-en ci-dessus.</p>}
+      </section>
+      <section className="data-list">
+        <div className="list-heading"><h2>Toutes mes cartes</h2><span>{allCards.length}</span></div>
+        {allCards.length ? allCards.map((card) => (
+          <article className="flashcard" key={card.id}>
+            {editingCard === card.id ? (
+              <div style={{ width: "100%", display: "grid", gap: 8 }}>
+                <label>Question<input value={editQuestion} onChange={(event) => setEditQuestion(event.target.value)} /></label>
+                <label>Réponse<textarea value={editAnswer} onChange={(event) => setEditAnswer(event.target.value)} style={{ minHeight: 60 }} /></label>
+                <div className="item-actions">
+                  <button className="complete-button" disabled={busy} onClick={() => { void editCard(card.id, editQuestion.trim(), editAnswer.trim()).then(() => setEditingCard(null)); }}><Check size={13} /> Enregistrer</button>
+                  <button className="skip-button" onClick={() => setEditingCard(null)}>Annuler</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <button className="flashcard-question" onClick={() => setRevealed(revealed === card.id ? null : card.id)}>{card.question}</button>
+                  {revealed === card.id && <p className="flashcard-answer" style={{ marginTop: 8 }}>{card.answer}</p>}
+                  <span className="chart-muted" style={{ display: "block", marginTop: 6 }}>Prochaine révision : {new Date(card.nextReview).toLocaleDateString("fr-FR")}</span>
+                </div>
+                <div className="item-actions">
+                  <button className="icon-button" onClick={() => { setEditingCard(card.id); setEditQuestion(card.question); setEditAnswer(card.answer); }} aria-label={`Modifier la carte « ${card.question.slice(0, 40)} »`}><Pencil size={15} /></button>
+                  <button className="icon-button danger" onClick={() => deleteCard(card.id)} aria-label={`Supprimer la carte « ${card.question.slice(0, 40)} »`}><Trash2 size={15} /></button>
+                </div>
+              </>
+            )}
+          </article>
+        )) : <p className="empty-state">Aucune carte. Crée-en ou génère-les depuis un cours.</p>}
       </section>
     </>
   );
