@@ -97,11 +97,17 @@ enum FlashcardDifficulty {
 }
 
 model User {
-  id             String            @id @default(cuid())
-  name           String?
-  email          String?           @unique
-  image          String?
-  subjects       Subject[]
+  id                        String            @id @default(cuid())
+  name                      String?
+  email                     String?           @unique
+  image                     String?
+  // Tokens Google persistés (optionnels) : permettent au worker/cron de
+  // synchroniser Google Calendar sans session navigateur active (le refresh
+  // token est utilisé par `getGoogleAccessToken`). Jamais exposés au client.
+  googleAccessToken         String?
+  googleRefreshToken        String?
+  googleAccessTokenExpiresAt DateTime?
+  subjects                  Subject[]
   chapters       Chapter[]
   courses        Course[]
   evaluations    Evaluation[]

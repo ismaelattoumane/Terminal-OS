@@ -33,13 +33,19 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const evaluation = await prisma.evaluation.update({ where: { id }, data: parsed.data });
 
   if (parsed.data.date && parsed.data.date.getTime() !== existing.date.getTime()) {
-    // La date change : les anciennes sessions planifiées sont supprimées PUIS le
-    // plan est régénéré. Avant la suppression, on récupère les éventuels identifiants
-    // Google pour nettoyer les événements distants et éviter les orphelins (M03).
-    const scheduled = await prisma.revisionSession.findMany({ where: { evaluationId: id, status: "planned" }, select: { calendarEventId: true } });
-    await deleteGoogleEvents(user.googleAccessToken, scheduled.map((session) => session.calendarEventId));
-    await prisma.revisionSession.deleteMany({ where: { evaluationId: id, status: "planned" } });
-    try { await regenerateRevisionPlan(user.id, id); } catch {
+    // La date change : le plan est régénéré — le service supprime les anciennes
+    // sessions planifiées ET leurs événements Google (aucun orphelin), puis crée
+    // les nouvelles sessions.
+    try {
+      const newSessions = await regenerateRevisionPlan(user.id, id, { googleAccessToken: user.googleAccessToken });
+      // Les nouvelles sessions sont poussées vers Google (best effort) : token de
+      // session ou token persisté côté serveur (workable sans navigateur).
+      try {
+        const { getGoogleAccessToken, syncRevisionsToGoogle } = await import("@/services/calendar");
+        const accessToken = user.googleAccessToken ?? await getGoogleAccessToken(user.id);
+        if (accessToken && newSessions) await syncRevisionsToGoogle(accessToken, user.id, newSessions.created.map((session) => session.id));
+      } catch { /* la prochaine sync globale ou le job repassera */ }
+    } catch {
       return NextResponse.json({ error: "Évaluation mise à jour, mais la régénération du plan a échoué. Relance-la depuis Automatisations." }, { status: 500 });
     }
   }

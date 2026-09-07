@@ -1,34 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { calendarTimeZone, datePartsInZone, zonedTimeToUtc } from "@/lib/timezone";
 
 type GoogleEvent = { id?: string; summary: string; description: string; start: { dateTime: string; timeZone: string }; end: { dateTime: string; timeZone: string } };
 
-// B32 / B33 : construire des dates dans un fuseau donné (Europe/Paris) sans
-// dépendre du fuseau du serveur (souvent UTC en cloud), via Intl.
-
-function datePartsInZone(date: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-  const parts = formatter.formatToParts(date);
-  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute"), second: get("second") };
-}
-
-function offsetMs(date: Date, timeZone: string): number {
-  const { year, month, day, hour, minute, second } = datePartsInZone(date, timeZone);
-  const asUTC = Date.UTC(year, month - 1, day, hour, minute, second);
-  return asUTC - date.getTime();
-}
-
-function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
-  let guess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const offset = offsetMs(guess, timeZone);
-  guess = new Date(guess.getTime() - offset);
-  // Deuxième passage pour corriger l'heure d'été au bord d'une transition.
-  if (offsetMs(guess, timeZone) !== offset) guess = new Date(guess.getTime() - (offsetMs(guess, timeZone) - offset));
-  return guess;
-}
-
 export async function importGoogleCalendarEvents(accessToken: string, userId: string, timeMin?: Date, timeMax?: Date) {
-  const timeZone = process.env.CALENDAR_TIMEZONE ?? "Europe/Paris";
+  const timeZone = calendarTimeZone();
   const params = new URLSearchParams({ singleEvents: "true", showDeleted: "false", maxResults: "2500" });
   if (timeMin) params.set("timeMin", timeMin.toISOString());
   if (timeMax) params.set("timeMax", timeMax.toISOString());
@@ -36,6 +12,7 @@ export async function importGoogleCalendarEvents(accessToken: string, userId: st
   if (!response.ok) throw new Error(`Google Calendar a répondu ${response.status}`);
   const data = await response.json() as { items?: Array<{ id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string } }> };
   let imported = 0;
+  const seenExternalIds: string[] = [];
   for (const item of data.items ?? []) {
     // B33 : les événements « journées entières » (champ `date`) doivent être
     // stockés dans le fuseau CALENDAR_TIMEZONE, pas calés en UTC (ce qui les
@@ -55,8 +32,14 @@ export async function importGoogleCalendarEvents(accessToken: string, userId: st
       end = zonedTimeToUtc(y, m, d, 23, 59, timeZone);
     }
     if (!start || !end) continue;
+    seenExternalIds.push(item.id);
     await prisma.event.upsert({ where: { userId_source_externalId: { userId, source: "google", externalId: item.id } }, update: { title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end) }, create: { userId, title: item.summary ?? "Événement Google", start: new Date(start), end: new Date(end), type: "personal", source: "google", externalId: item.id } });
     imported += 1;
+  }
+  // Nettoyage : un événement supprimé côté Google (ou déplacé hors de la fenêtre)
+  // ne doit plus exister localement, sinon il « réapparaît » à la sync suivante.
+  if (timeMin && seenExternalIds.length) {
+    await prisma.event.deleteMany({ where: { userId, source: "google", externalId: { notIn: seenExternalIds }, start: { gte: timeMin } } });
   }
   return imported;
 }
@@ -64,7 +47,7 @@ export async function importGoogleCalendarEvents(accessToken: string, userId: st
 export async function syncRevisionToGoogleCalendar(accessToken: string, revisionId: string, userId: string) {
   const revision = await prisma.revisionSession.findFirst({ where: { id: revisionId, userId }, include: { subject: true, chapter: true, evaluation: true } });
   if (!revision) throw new Error("Révision introuvable");
-  const timeZone = process.env.CALENDAR_TIMEZONE ?? "Europe/Paris";
+  const timeZone = calendarTimeZone();
   // B32 : construire la date dans le fuseau CALENDAR_TIMEZONE (pas le fuseau du
   // serveur) pour que l'événement Google soit à la bonne heure.
   const { year, month, day } = datePartsInZone(revision.date, timeZone);
@@ -96,7 +79,7 @@ export async function deleteRevisionFromGoogleCalendar(accessToken: string, revi
  * déjà supprimé. La modification de l'événement distant suffit à garantir
  * l'idempotence (rien n'est recréé).
  */
-export async function deleteGoogleEvents(accessToken: string | undefined, calendarEventIds: Array<string | null>): Promise<number> {
+export async function deleteGoogleEvents(accessToken: string | null | undefined, calendarEventIds: Array<string | null>): Promise<number> {
   if (!accessToken) return 0;
   const ids = calendarEventIds.filter((id): id is string => Boolean(id));
   if (!ids.length) return 0;
@@ -111,4 +94,44 @@ export async function deleteGoogleEvents(accessToken: string | undefined, calend
     }
   }
   return deleted;
+}
+/**
+ * Retourne un jeton d'accès Google valide pour un utilisateur, en le
+ * rafraîchissant via le refresh token persisté si nécessaire. C'est ce qui
+ * permet au worker/cron de synchroniser Google Calendar sans session
+ * navigateur active (PC éteint), et évite les appels avec un token expiré.
+ */
+export async function getGoogleAccessToken(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { googleAccessToken: true, googleRefreshToken: true, googleAccessTokenExpiresAt: true } });
+  if (!user?.googleAccessToken) return null;
+  if (user.googleAccessTokenExpiresAt && Date.now() < user.googleAccessTokenExpiresAt.getTime() - 60_000) return user.googleAccessToken;
+  if (!user.googleRefreshToken) return null;
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID ?? "", client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "", grant_type: "refresh_token", refresh_token: user.googleRefreshToken }),
+  });
+  if (!response.ok) return null;
+  const refreshed = await response.json() as { access_token: string; expires_in?: number; refresh_token?: string };
+  await prisma.user.update({ where: { id: userId }, data: { googleAccessToken: refreshed.access_token, googleAccessTokenExpiresAt: new Date(Date.now() + (refreshed.expires_in ?? 3600) * 1000), ...(refreshed.refresh_token ? { googleRefreshToken: refreshed.refresh_token } : {}) } });
+  return refreshed.access_token;
+}
+
+/**
+ * Synchronise une liste de révisions vers Google Calendar (POST si aucun
+ * événement n'existe, PATCH sinon). Sert à la sync immédiate après création
+ * d'évaluation, au déplacement d'une session et après régénération de plan.
+ */
+export async function syncRevisionsToGoogle(accessToken: string, userId: string, revisionIds: Array<string | null>): Promise<number> {
+  let synced = 0;
+  for (const revisionId of revisionIds) {
+    if (!revisionId) continue;
+    try {
+      await syncRevisionToGoogleCalendar(accessToken, revisionId, userId);
+      synced += 1;
+    } catch {
+      // Best effort : la sync globale (bouton ou job) repassera plus tard.
+    }
+  }
+  return synced;
 }

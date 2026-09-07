@@ -60,17 +60,29 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   // Effets de bord :
   // - Terminer une session : la maîtrise du chapitre est recalculée.
-  // - Ignorer/reporter une session : son événement Google est retiré (best effort)
-  //   pour ne pas laisser d'orphelin dans le calendrier distant.
+  // - Ignorer une session : son événement Google est retiré (best effort).
+  // - Déplacer une session (date/heure/durée) ou la reporter/replanifier :
+  //   l'événement Google est mis à jour (PATCH) pour rester en phase avec la
+  //   modification — l'utilisateur voit son déplacement conservé partout.
   if (parsed.data.status === "completed" && existing.status !== "completed") {
     if (revision.chapterId) await recalculateChapterMastery(user.id, revision.chapterId);
     await auditLog(user.id, "revision.completed", { revisionId: id });
   }
-  const becameInactive = (parsed.data.status === "skipped" || parsed.data.status === "postponed") && existing.calendarEventId;
-  if (becameInactive) {
+  if (parsed.data.status === "skipped" && existing.calendarEventId) {
     const { deleteGoogleEvents } = await import("@/services/calendar");
     await deleteGoogleEvents(user.googleAccessToken, [existing.calendarEventId]);
     await prisma.revisionSession.update({ where: { id }, data: { calendarEventId: null } });
+  }
+  const moved = parsed.data.date !== undefined || parsed.data.startTime !== undefined || parsed.data.duration !== undefined
+    || parsed.data.status === "planned" || parsed.data.status === "in_progress" || parsed.data.status === "postponed";
+  if (moved && revision.status !== "skipped" && revision.status !== "completed") {
+    try {
+      const { getGoogleAccessToken, syncRevisionToGoogleCalendar } = await import("@/services/calendar");
+      const accessToken = user.googleAccessToken ?? await getGoogleAccessToken(user.id);
+      if (accessToken) await syncRevisionToGoogleCalendar(accessToken, revision.id, user.id);
+    } catch {
+      // La prochaine synchronisation globale (bouton ou job) repassera dessus.
+    }
   }
   return NextResponse.json(revision);
 }

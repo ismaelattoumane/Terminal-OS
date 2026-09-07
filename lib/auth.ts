@@ -2,6 +2,28 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Persiste les jetons Google sur la ligne Utilisateur (best effort) pour que le
+ * worker/cron puisse synchroniser le calendrier sans session navigateur. Ne
+ * contient aucune donnée sensible exposée au client : le callback `session` ne
+ * renvoie que l'access token courant, jamais le refresh token.
+ */
+async function persistGoogleTokens(email: string | null | undefined, data: { accessToken?: string; refreshToken?: string; expiresAt?: number }) {
+  if (!email) return;
+  try {
+    await prisma.user.updateMany({
+      where: { email },
+      data: {
+        ...(data.accessToken ? { googleAccessToken: data.accessToken } : {}),
+        ...(data.refreshToken ? { googleRefreshToken: data.refreshToken } : {}),
+        ...(data.expiresAt ? { googleAccessTokenExpiresAt: new Date(data.expiresAt) } : {}),
+      },
+    });
+  } catch {
+    // Best effort : la session reste fonctionnelle même si la persistance échoue.
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   // next-auth v4 lit uniquement NEXTAUTH_SECRET (pas AUTH_SECRET, nom v5) :
   // sans cette clé, MissingSecret est levée en production (B01).
@@ -17,6 +39,7 @@ export const authOptions: NextAuthOptions = {
         token.googleAccessToken = account.access_token;
         token.googleRefreshToken = account.refresh_token;
         token.googleAccessTokenExpiresAt = account.expires_at ? account.expires_at * 1000 : Date.now() + 3_600_000;
+        await persistGoogleTokens(token.email, { accessToken: account.access_token, refreshToken: account.refresh_token ?? undefined, expiresAt: token.googleAccessTokenExpiresAt as number });
       }
       if (token.googleAccessToken && token.googleAccessTokenExpiresAt && Date.now() < token.googleAccessTokenExpiresAt - 60_000) return token;
       if (!token.googleRefreshToken) return token;
@@ -28,6 +51,7 @@ export const authOptions: NextAuthOptions = {
       // B34 : Google peut renouveler le refresh_token ; on le persiste s'il est
       // présent pour éviter la perte de connexion à terme.
       if (refreshed.refresh_token) token.googleRefreshToken = refreshed.refresh_token;
+      await persistGoogleTokens(token.email, { accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token ?? undefined, expiresAt: token.googleAccessTokenExpiresAt as number });
       return token;
     },
     async session({ session, token }) {

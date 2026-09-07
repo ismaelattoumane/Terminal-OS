@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { recalculateAllMastery, recalculateChapterMastery } from "@/services/mastery";
 import { structureCourseText } from "@/services/course-processor";
 import { getAIProvider } from "@/services/ai";
-import { createRevisionPlan } from "@/services/revision-planner";
 import { collectReminders } from "@/services/reminders";
 import { auditLog } from "@/lib/audit";
 
@@ -39,8 +38,9 @@ export async function retryJob(userId: string, jobId: string) {
  * Régénère le plan de révision d'une évaluation existante (B03) : utilisé quand
  * la date d'un contrôle change, après suppression des sessions planifiées.
  */
-export async function regenerateRevisionPlan(userId: string, evaluationId: string) {
-  await handleCreateRevisionPlan(userId, { evaluationId });
+export async function regenerateRevisionPlan(userId: string, evaluationId: string, options?: { googleAccessToken?: string | null }) {
+  const { createEvaluationRevisionSessions } = await import("@/services/plan-execution");
+  return createEvaluationRevisionSessions(userId, evaluationId, options);
 }
 
 async function runHandler(type: JobType, userId: string, payload: unknown) {
@@ -64,15 +64,16 @@ async function runHandler(type: JobType, userId: string, payload: unknown) {
     case "generate_flashcards":
       await handleGenerateFlashcards(userId, data);
       return;
-    case "sync_google_calendar":
-      if (typeof data.accessToken === "string" && data.accessToken) {
-        const { importGoogleCalendarEvents, syncRevisionToGoogleCalendar } = await import("@/services/calendar");
-        const revisions = await prisma.revisionSession.findMany({ where: { userId, status: { not: "skipped" } }, select: { id: true } });
-        for (const revision of revisions) await syncRevisionToGoogleCalendar(data.accessToken, revision.id, userId);
-        await importGoogleCalendarEvents(data.accessToken, userId, new Date());
-        return;
-      }
-      throw new Error("Connexion Google requise : lancer la synchronisation depuis l'interface Calendrier");
+    case "sync_google_calendar": {
+      const { getGoogleAccessToken, importGoogleCalendarEvents, syncRevisionsToGoogle } = await import("@/services/calendar");
+      const accessToken = await getGoogleAccessToken(userId);
+      if (!accessToken) throw new Error("Connexion Google requise : connecte Google Calendar puis relance.");
+      const revisions = await prisma.revisionSession.findMany({ where: { userId, status: { not: "skipped" } }, select: { id: true } });
+      const synced = await syncRevisionsToGoogle(accessToken, userId, revisions.map((revision) => revision.id));
+      const imported = await importGoogleCalendarEvents(accessToken, userId, new Date());
+      await auditLog(userId, "calendar.sync", { synced, imported, trigger: "job" });
+      return;
+    }
     case "generate_quiz":
       // La génération de quiz reste à la demande : POST /api/quizzes. Rien à persister ici.
       return;
@@ -123,20 +124,17 @@ async function handleProcessCourse(userId: string, payload: Record<string, unkno
 async function handleCreateRevisionPlan(userId: string, payload: Record<string, unknown>) {
   const evaluationId = typeof payload.evaluationId === "string" ? payload.evaluationId : null;
   if (!evaluationId) throw new Error("evaluationId manquant");
-  const evaluation = await prisma.evaluation.findFirst({ where: { id: evaluationId, userId }, include: { chapters: { select: { id: true, mastery: true } }, subject: { select: { id: true } } } });
-  if (!evaluation) throw new Error("Évaluation introuvable pour ce compte");
-  const [schedules, events] = await Promise.all([
-    prisma.schedule.findMany({ where: { userId }, select: { dayOfWeek: true, startTime: true, endTime: true } }),
-    prisma.event.findMany({ where: { userId, start: { gte: new Date() }, end: { lte: evaluation.date } }, select: { start: true, end: true } }),
-  ]);
-  const busyIntervals = [
-    ...Array.from({ length: Math.max(0, Math.ceil((evaluation.date.getTime() - new Date().getTime()) / 86_400_000)) }, (_, index) => {
-      const date = new Date(); date.setDate(date.getDate() + index + 1); return schedules.filter((schedule) => schedule.dayOfWeek === date.getDay()).map((schedule) => ({ date, startTime: schedule.startTime, endTime: schedule.endTime }));
-    }).flat(),
-    ...events.map((event) => ({ date: event.start, startTime: event.start.toTimeString().slice(0, 5), endTime: event.end.toTimeString().slice(0, 5) })),
-  ];
-  const plan = createRevisionPlan({ examDate: evaluation.date, difficulty: evaluation.difficulty, importance: evaluation.importance, chapterCount: evaluation.chapters.length, mastery: evaluation.chapters.map(({ mastery }) => mastery), busyIntervals });
-  if (plan.length) await prisma.revisionSession.createMany({ data: plan.map((session) => ({ userId, subjectId: evaluation.subject.id, evaluationId: evaluation.id, title: `${evaluation.title} · ${session.type}`, date: session.date, startTime: session.startTime, duration: session.duration, type: session.type, priority: evaluation.importance })) });
+  // Le calcul des créneaux libres et la création idempotente des sessions sont
+  // centralisés dans plan-execution (même logique que POST /api/evaluations).
+  const { createEvaluationRevisionSessions } = await import("@/services/plan-execution");
+  // Le worker tourne sans session navigateur : il utilise le token persisté pour
+  // nettoyer les anciens événements Google des sessions remplacées.
+  let accessToken: string | null = null;
+  try {
+    const { getGoogleAccessToken } = await import("@/services/calendar");
+    accessToken = await getGoogleAccessToken(userId);
+  } catch { /* pas de connexion Google : nettoyage sauté, best effort */ }
+  await createEvaluationRevisionSessions(userId, evaluationId, { googleAccessToken: accessToken });
 }
 
 async function handleGenerateStudySheet(userId: string, payload: Record<string, unknown>) {
