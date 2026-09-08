@@ -96,6 +96,20 @@ enum FlashcardDifficulty {
   hard
 }
 
+enum CalendarExceptionType {
+  holiday
+  vacation
+  no_class
+  exceptional
+}
+
+enum AnalysisStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
 model User {
   id                        String            @id @default(cuid())
   name                      String?
@@ -121,6 +135,7 @@ model User {
   flashcards     Flashcard[]
   quizAttempts   QuizAttempt[]
   auditLogs      AuditLog[]
+  calendarExceptions CalendarException[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -186,6 +201,10 @@ model Course {
   rawContent  String?
   sourceType  CourseSourceType @default(text)
   fileUrl     String?
+  // B33 : hash du contenu extrait (SHA-256 hex) pour éviter de réanalyser un
+  // document identique (cache + détection de doublons IA).
+  contentHash String?
+  analysisStatus AnalysisStatus @default(pending)
   difficulty  Difficulty       @default(normal)
   mastery     Int              @default(0)
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -386,4 +405,17 @@ model AuditLog {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+
+model CalendarException {
+  id        String                @id @default(cuid())
+  userId    String
+  date      DateTime              @db.Date
+  type      CalendarExceptionType
+  label     String?
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
 }

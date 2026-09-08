@@ -62,10 +62,11 @@ export function proxy(request: NextRequest) {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com",
+      "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com",
+      "frame-src 'self' https://accounts.google.com",
       "object-src 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://accounts.google.com",
       "frame-ancestors 'none'",
     ].join("; ");
     const requestHeaders = new Headers(request.headers);
