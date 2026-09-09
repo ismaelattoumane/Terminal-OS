@@ -42,9 +42,14 @@ npm run db:deploy   # équivalent à prisma migrate deploy
 
 Injecter cette commande dans le lifecycle du déploiement (pré-deploy). Exemples :
 
-- **Vercel** : script de build `npm run db:generate && npm run build`, puis sur un
-  environnement de production exécuter `npx prisma migrate deploy` (post-deploy
-  via un job manuel ou une GitHub Action).
+- **Vercel** : le build (`npm run build`) ne fait que compiler (`next build`) ;
+  `prisma generate` est exécuté par le hook `postinstall` lors de l'installation.
+  La migration est appliquée séparément du build : `npm run db:deploy`
+  (`prisma migrate deploy`) via une GitHub Action pré-déploiement, une exécution
+  manuelle (`vercel env pull` puis `npx prisma migrate deploy`) ou un job CI.
+  Ne jamais mettre `prisma migrate deploy` dans le script `build` : l'environnement
+  de build Vercel n'a pas toujours accès à la base et l'acquisition du verrou
+  advisory (`pg_advisory_lock`) échoue en timeout (erreur Prisma P1002).
 - **Render / Railway** : commande de démarrage
   `npm run db:deploy && npm start`, `predeploy` équivalent.
 
