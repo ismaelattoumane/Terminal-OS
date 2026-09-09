@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Chapitres invalides" }, { status: 400 });
   }
   const evaluation = await prisma.evaluation.create({ data: { ...data, userId: user.user.id, chapters: { connect: chapters.map(({ id }) => ({ id })) } } });
-  const { created, deleted } = await createEvaluationRevisionSessions(user.user.id, evaluation.id);
+  const { created, deleted, unplaced } = await createEvaluationRevisionSessions(user.user.id, evaluation.id);
   void deleted;
   await Promise.all(chapters.map((chapter) => enqueueJob(user.user.id, "update_mastery", { chapterId: chapter.id }, `evaluation:${evaluation.id}:mastery:${chapter.id}`)));
   // Synchronisation Google Calendar immédiate (best effort) : les nouvelles
@@ -55,10 +55,15 @@ export async function POST(request: Request) {
   } catch {
     await enqueueJob(user.user.id, "sync_google_calendar", {}, `evaluation:${evaluation.id}:sync`);
   }
+  const placementWarning = unplaced > 0
+    ? `Impossible de placer toutes les révisions automatiquement (${unplaced} créneau(x) non trouvé(s)). Réduis la durée, utilise un autre jour, ou planifie manuellement.`
+    : null;
   return NextResponse.json({
     evaluation,
     chapters: chapters.map(({ id }) => ({ id })),
     revisionSessionsCreated: created.length,
+    revisionsUnplaced: unplaced,
+    placementWarning,
     autoChapters: requestedChapterIds.length === 0,
     googleSynced,
   }, { status: 201 });

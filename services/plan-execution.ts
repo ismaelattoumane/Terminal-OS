@@ -30,10 +30,11 @@ export async function resolveEvaluationChapterIds(userId: string, subjectId: str
  * CALENDAR_TIMEZONE, heure murale de l'utilisateur. */
 async function buildBusyIntervals(userId: string, from: Date, to: Date): Promise<{ intervals: BusyInterval[]; existingLoad: Record<string, number> }> {
   const timeZone = calendarTimeZone();
-  const [schedules, events, plannedRevisions] = await Promise.all([
+  const [schedules, events, plannedRevisions, exceptions] = await Promise.all([
     prisma.schedule.findMany({ where: { userId }, select: { dayOfWeek: true, startTime: true, endTime: true } }),
     prisma.event.findMany({ where: { userId, start: { gte: from }, end: { lte: to } }, select: { start: true, end: true } }),
     prisma.revisionSession.findMany({ where: { userId, status: "planned", date: { gte: zonedStartOfDay(from, timeZone), lte: to } }, select: { date: true, startTime: true, duration: true } }),
+    prisma.calendarException.findMany({ where: { userId, date: { gte: zonedStartOfDay(from, timeZone), lte: zonedStartOfDay(to, timeZone) } }, select: { date: true } }),
   ]);
   const intervals: BusyInterval[] = [];
   const existingLoad: Record<string, number> = {};
@@ -46,6 +47,10 @@ async function buildBusyIntervals(userId: string, from: Date, to: Date): Promise
       if (scheduleDayToJs(schedule.dayOfWeek) !== jsDayOfWeek) continue;
       intervals.push({ date, startTime: schedule.startTime, endTime: schedule.endTime });
     }
+  }
+  // Vacances / jours fériés / journées sans cours : journée entière indisponible.
+  for (const exception of exceptions) {
+    intervals.push({ date: exception.date, startTime: "00:00", endTime: "24:00" });
   }
   for (const event of events) {
     intervals.push({ date: event.start, startTime: zonedTimeOfDay(event.start, timeZone), endTime: zonedTimeOfDay(event.end, timeZone) });
@@ -66,7 +71,7 @@ async function buildBusyIntervals(userId: string, from: Date, to: Date): Promise
  * orphelin), puis crée les nouvelles sessions, chaque session étant rattachée à
  * un chapitre (rotation) pour que la maîtrise puisse être mise à jour.
  */
-export async function createEvaluationRevisionSessions(userId: string, evaluationId: string, options?: { googleAccessToken?: string | null }): Promise<{ created: Array<{ id: string }>; deleted: number }> {
+export async function createEvaluationRevisionSessions(userId: string, evaluationId: string, options?: { googleAccessToken?: string | null }): Promise<{ created: Array<{ id: string }>; deleted: number; unplaced: number }> {
   const evaluation = await prisma.evaluation.findFirst({
     where: { id: evaluationId, userId },
     include: { chapters: { select: { id: true, mastery: true } }, subject: { select: { id: true } } },
@@ -75,7 +80,7 @@ export async function createEvaluationRevisionSessions(userId: string, evaluatio
 
   const now = new Date();
   const { intervals, existingLoad } = await buildBusyIntervals(userId, now, evaluation.date);
-  const plan = createRevisionPlan({
+  const { desired, sessions: plan } = createRevisionPlan({
     examDate: evaluation.date,
     difficulty: evaluation.difficulty,
     importance: evaluation.importance,
@@ -84,6 +89,7 @@ export async function createEvaluationRevisionSessions(userId: string, evaluatio
     existingLoad,
     busyIntervals: intervals,
   });
+  const unplaced = Math.max(0, desired - plan.length);
 
   const toRemove = await prisma.revisionSession.findMany({ where: { evaluationId, userId, status: "planned" }, select: { calendarEventId: true } });
   // Nettoyage des événements Google des sessions remplacées (best effort) :
@@ -94,7 +100,7 @@ export async function createEvaluationRevisionSessions(userId: string, evaluatio
     await deleteGoogleEvents(options?.googleAccessToken, toRemove.map((session) => session.calendarEventId));
   }
   const deleted = await prisma.revisionSession.deleteMany({ where: { evaluationId, userId, status: "planned" } });
-  if (!plan.length) return { created: [], deleted: deleted.count };
+  if (!plan.length) return { created: [], deleted: deleted.count, unplaced };
 
   const chapterIds = evaluation.chapters.map(({ id }) => id);
   const data = plan.map((session, index) => ({
@@ -116,7 +122,7 @@ export async function createEvaluationRevisionSessions(userId: string, evaluatio
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
     take: data.length,
   });
-  return { created: rows, deleted: deleted.count };
+  return { created: rows, deleted: deleted.count, unplaced };
 }
 
 function toMinutes(value: string) { const [hours, minutes] = value.split(":").map(Number); return hours * 60 + minutes; }

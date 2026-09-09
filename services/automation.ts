@@ -96,30 +96,47 @@ async function runHandler(type: JobType, userId: string, payload: unknown) {
  */
 async function handleProcessCourse(userId: string, payload: Record<string, unknown>) {
   const courseId = typeof payload.courseId === "string" ? payload.courseId : null;
+  const payloadHash = typeof payload.contentHash === "string" ? payload.contentHash : null;
   if (!courseId) throw new Error("courseId manquant");
-  const course = await prisma.course.findFirst({ where: { id: courseId, userId }, select: { id: true, chapterId: true, title: true, content: true, sourceType: true, fileUrl: true } });
+  const course = await prisma.course.findFirst({ where: { id: courseId, userId }, select: { id: true, chapterId: true, title: true, content: true, rawContent: true, sourceType: true, fileUrl: true, contentHash: true, analysisStatus: true } });
   if (!course) throw new Error("Cours introuvable pour ce compte");
 
-  // OCR pour les images : le fichier est relu depuis le stockage S3.
-  if (!course.content && course.sourceType === "image" && course.fileUrl) {
-    const { downloadCourseFile } = await import("@/services/storage");
-    const { ocrImageToText } = await import("@/services/ocr");
-    const buffer = await downloadCourseFile(course.fileUrl);
-    if (buffer) {
-      const mime = course.fileUrl.endsWith(".png") ? "image/png" : "image/jpeg";
-      const result = await ocrImageToText(new File([new Uint8Array(buffer)], "cours-image", { type: mime }));
-      if (result) await prisma.course.update({ where: { id: course.id }, data: { content: result.text } });
-    }
+  // B33 : cache — si le contenu n'a pas changé (hash identique) et déjà analysé,
+  // on saute la structuration pour éviter un appel IA inutile.
+  if (payloadHash && course.contentHash === payloadHash && course.analysisStatus === "completed") {
+    if (course.chapterId) await recalculateChapterMastery(userId, course.chapterId);
+    return;
   }
 
-  const latest = await prisma.course.findFirst({ where: { id: course.id, userId }, select: { content: true, rawContent: true } });
-  if (latest?.content?.trim()) {
-    const structured = structureCourseText(course.title, latest.content);
-    // B30 : on conserve le contenu brut original avant de le remplacer par la
-    // version structurée (évite la perte de données au-delà de l'extrait 80 lignes).
-    await prisma.course.update({ where: { id: course.id }, data: { content: structured, rawContent: latest.rawContent ?? latest.content } });
+  await prisma.course.update({ where: { id: course.id }, data: { analysisStatus: "processing" } });
+
+  try {
+    // OCR pour les images : le fichier est relu depuis le stockage S3.
+    if (!course.content && course.sourceType === "image" && course.fileUrl) {
+      const { downloadCourseFile } = await import("@/services/storage");
+      const { ocrImageToText } = await import("@/services/ocr");
+      const buffer = await downloadCourseFile(course.fileUrl);
+      if (buffer) {
+        const mime = course.fileUrl.endsWith(".png") ? "image/png" : "image/jpeg";
+        const result = await ocrImageToText(new File([new Uint8Array(buffer)], "cours-image", { type: mime }));
+        if (result) await prisma.course.update({ where: { id: course.id }, data: { content: result.text } });
+      }
+    }
+
+    const latest = await prisma.course.findFirst({ where: { id: course.id, userId }, select: { content: true, rawContent: true } });
+    if (latest?.content?.trim()) {
+      const structured = structureCourseText(course.title, latest.content);
+      // B30 : on conserve le contenu brut original avant de le remplacer par la
+      // version structurée (évite la perte de données au-delà de l'extrait 80 lignes).
+      await prisma.course.update({ where: { id: course.id }, data: { content: structured, rawContent: latest.rawContent ?? latest.content, analysisStatus: "completed" } });
+    } else {
+      await prisma.course.update({ where: { id: course.id }, data: { analysisStatus: course.content ? "completed" : "failed" } });
+    }
+    if (course.chapterId) await recalculateChapterMastery(userId, course.chapterId);
+  } catch (error) {
+    await prisma.course.update({ where: { id: course.id }, data: { analysisStatus: "failed" } });
+    throw error;
   }
-  if (course.chapterId) await recalculateChapterMastery(userId, course.chapterId);
 }
 async function handleCreateRevisionPlan(userId: string, payload: Record<string, unknown>) {
   const evaluationId = typeof payload.evaluationId === "string" ? payload.evaluationId : null;

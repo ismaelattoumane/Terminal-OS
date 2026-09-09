@@ -13,12 +13,14 @@ const stages: Array<RevisionPlanSession["type"]> = ["learning", "memorization", 
  * heure par heure dans ce même fuseau, et le jour de la semaine est calculé
  * dans ce fuseau (les créneaux de cours étant saisis en heure locale).
  */
-export function createRevisionPlan(input: RevisionPlanInput): RevisionPlanSession[] {
+export type RevisionPlanResult = { desired: number; sessions: RevisionPlanSession[] };
+
+export function createRevisionPlan(input: RevisionPlanInput): RevisionPlanResult {
   const timeZone = calendarTimeZone();
   const today = zonedStartOfDay(input.today ?? new Date(), timeZone);
   const examDate = zonedStartOfDay(input.examDate, timeZone);
   const daysAvailable = Math.max(0, Math.round((examDate.getTime() - today.getTime()) / 86_400_000));
-  if (daysAvailable < 1) return [];
+  if (daysAvailable < 1) return { desired: 0, sessions: [] };
   const desired = Math.min(stages.length, Math.max(2, Math.ceil(daysAvailable / 3)));
   const baseDuration = input.difficulty === "hard" || input.importance === "critical" ? 40 : input.difficulty === "easy" ? 25 : 30;
   const averageMastery = input.mastery.length ? input.mastery.reduce((sum, value) => sum + value, 0) / input.mastery.length : 50;
@@ -39,7 +41,7 @@ export function createRevisionPlan(input: RevisionPlanInput): RevisionPlanSessio
     if (!startTime) continue;
     sessions.push({ type, date, startTime, duration: sessionDuration });
   }
-  return sessions;
+  return { desired, sessions };
 }
 function addDays(date: Date, days: number) { const result = new Date(date); result.setDate(result.getDate() + days); return result; }
 

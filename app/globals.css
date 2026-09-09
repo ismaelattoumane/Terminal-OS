@@ -476,4 +476,46 @@ textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
   .metrics-row { grid-template-columns: 1fr; }
   .topbar { padding: 0 12px; }
   .page-content { padding: 20px 14px 72px; }
+
+/* ── Import emploi du temps & exceptions ------------------------------------ */
+.import-form { margin: 12px 0; }
+.file-drop {
+  display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+  border: 2px dashed var(--border-strong); border-radius: 12px;
+  background: var(--surface-2); color: var(--muted); cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.file-drop:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.import-error { color: #c0392b; font-size: 13px; margin: 8px 2px; }
+.import-success { color: var(--green); font-size: 13px; margin: 8px 2px; }
+.import-preview { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.preview-summary { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.preview-summary .warn { color: var(--accent); font-weight: 600; }
+.preview-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+.preview-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); flex-wrap: wrap; }
+.preview-row.confidence-low { background: #fdecea; border: 1px solid #f5c6c0; }
+.preview-row.confidence-medium { background: #fff7e6; }
+.preview-row select, .preview-row input { font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.preview-row .subject-input { flex: 1 1 140px; min-width: 120px; }
+.preview-row .room-input { width: 90px; }
+.row-warnings { font-size: 11px; color: var(--accent); width: 100%; }
+.preview-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mode-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.mode-toggle select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.exception-form { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.exception-form input, .exception-form select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.calendar-exception { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); margin-bottom: 6px; }
+.calendar-exception div { display: flex; flex-direction: column; flex: 1; }
+.calendar-exception strong { font-size: 14px; }
+.calendar-exception span { font-size: 12px; color: var(--muted); }
+/* ── Statut d'analyse des cours ──────────────────────────────────────────── */
+.analysis-status {
+  font-size: 11px; color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+  margin-left: 6px; font-weight: 500; white-space: nowrap;
+}
+.analysis-status[data-state="processing"] { color: var(--accent); background: var(--accent-soft); border-color: #f8d0c0; }
+.analysis-status[data-state="failed"] { color: #c0392b; background: #fdecea; border-color: #f5c6c0; }
+.analysis-error { color: #c0392b; font-size: 13px; margin: 8px 2px; }
+
 }

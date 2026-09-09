@@ -7,6 +7,7 @@ import { allowedCourseMimeTypes, allowedCourseExtensions, extractCourseText, MAX
 import { uploadCourseFile } from "@/services/storage";
 import { enqueueJob, processNextJob } from "@/services/automation";
 import { auditLog } from "@/lib/audit";
+import { createHash } from "crypto";
 
 const metadataSchema = z.object({ subjectId: z.string().cuid(), chapterId: z.string().cuid().optional(), title: z.string().trim().min(1).max(160).optional() });
 
@@ -30,8 +31,11 @@ export async function POST(request: Request) {
   const content = await extractCourseText(file);
   const key = `${user.id}/courses/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
   const fileUrl = await uploadCourseFile(key, file);
-  const course = await prisma.course.create({ data: { userId: user.id, subjectId: metadata.data.subjectId, chapterId: metadata.data.chapterId, title: metadata.data.title ?? file.name, content, fileUrl, sourceType: sourceTypeFor(file) } });
-  const job = await enqueueJob(user.id, "process_course", { courseId: course.id }, `course-process:${course.id}`);
+  // B33 : hash du contenu extrait pour déduplication / cache (pas de réanalyse
+  // d'un document identique). On hash le texte brut, pas le fichier binaire.
+  const contentHash = content ? createHash("sha256").update(content).digest("hex") : null;
+  const course = await prisma.course.create({ data: { userId: user.id, subjectId: metadata.data.subjectId, chapterId: metadata.data.chapterId, title: metadata.data.title ?? file.name, content, fileUrl, sourceType: sourceTypeFor(file), contentHash, analysisStatus: "processing" } });
+  const job = await enqueueJob(user.id, "process_course", { courseId: course.id, contentHash }, `course-process:${course.id}`);
   await auditLog(user.id, "course.upload", { courseId: course.id, fileName: file.name, sourceType: course.sourceType, stored: Boolean(fileUrl) });
   // Traitement du pipeline (structuration, voire OCR) dès maintenant, relançable via les Automatisations.
   let processed = null;

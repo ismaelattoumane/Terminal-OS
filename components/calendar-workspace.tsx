@@ -4,6 +4,8 @@ import { FormEvent, startTransition, useEffect, useState } from "react";
 import { CalendarDays, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { queuedFetch } from "@/lib/offline-queue";
+import { ScheduleImportWorkspace } from "@/components/schedule-import-workspace";
+import { ExceptionsWorkspace } from "@/components/exceptions-workspace";
 
 type CalendarItem = { id: string; title: string; start: string; end: string; type: string; source: "internal" | "google" | "notion" };
 type Schedule = { id: string; dayOfWeek: number; startTime: string; endTime: string; location: string | null; subject: { name: string } | null };
@@ -145,6 +147,8 @@ export function CalendarWorkspace() {
         <div className="list-heading"><h2>Créneaux de cours protégés</h2><span>{schedules.length}</span></div>
         {schedules.length ? schedules.map((schedule) => <div className="calendar-event" key={schedule.id}><span className="event-color school" /><div><strong>{schedule.subject?.name ?? days[schedule.dayOfWeek]}</strong><span>{days[schedule.dayOfWeek]} · {schedule.startTime} - {schedule.endTime}{schedule.location ? ` · ${schedule.location}` : ""}</span></div><button className="delete-button" onClick={() => { if (window.confirm("Supprimer ce créneau ? Cette action est définitive.")) queuedFetch(`/api/schedule/${schedule.id}`, { method: "DELETE" }).then(load); }} aria-label="Supprimer le créneau"><Trash2 size={15} /></button></div>) : <p className="empty-state">Ajoute les horaires de tes cours pour que le planner les évite.</p>}
       </section>
+      <ScheduleImportWorkspace onImported={load} />
+      <ExceptionsWorkspace />
     </div>
   );
 }

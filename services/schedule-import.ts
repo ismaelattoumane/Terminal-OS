@@ -27,13 +27,13 @@ export type ImportPreview = {
 export const daysLabels = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
 const DAYS_FR: Array<[RegExp, number]> = [
-  [/\b(lun|monday)\b/i, 0],
-  [/\b(mar|tuesday)\b/i, 1],
-  [/\b(mer|wednesday)\b/i, 2],
-  [/\b(jeu|thursday)\b/i, 3],
-  [/\b(ven|friday)\b/i, 4],
-  [/\b(sam|saturday)\b/i, 5],
-  [/\b(dim|sunday)\b/i, 6],
+  [/^(lun(?:di)?|monday)/i, 0],
+  [/^(mar(?:di)?|tuesday)/i, 1],
+  [/^(mer(?:credi)?|wednesday)/i, 2],
+  [/^(jeu(?:di)?|thursday)/i, 3],
+  [/^(ven(?:dredi)?|friday)/i, 4],
+  [/^(sam(?:edi)?|saturday)/i, 5],
+  [/^(dim(?:anche)?|sunday)/i, 6],
 ];
 
 const HOUR_TOKEN = "(\\d{1,2})[:hH]?\\s*(\\d{2})?";

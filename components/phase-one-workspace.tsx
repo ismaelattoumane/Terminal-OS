@@ -8,7 +8,7 @@ import { fetchJsonWithLimit } from "@/lib/api-client";
 /* ── Types (miroir des API) ─────────────────────────────────────────────── */
 type Subject = { id: string; name: string; shortName: string; color: string; coefficient: number; teacher?: string | null };
 type Chapter = { id: string; name: string; mastery: number; subjectId: string; subject: { name: string } };
-type Course = { id: string; title: string; content: string | null; fileUrl: string | null; subjectId: string; chapterId: string | null; subject: { name: string }; chapter: { name: string } | null };
+type Course = { id: string; title: string; content: string | null; fileUrl: string | null; subjectId: string; chapterId: string | null; analysisStatus?: string | null; subject: { name: string }; chapter: { name: string } | null };
 type Evaluation = { id: string; title: string; date: string; status: string; importance: string; difficulty: string; subjectId: string; description: string | null; subject: { name: string }; chapters: Array<{ id: string; name: string }>; revisions: Array<{ id: string; status: string }> };
 type Revision = { id: string; title: string; date: string; startTime: string | null; duration: number; status: string; type: string; subjectId: string; chapterId: string | null; subject: { name: string }; chapter: { name: string } | null };
 type Homework = { id: string; title: string; dueDate: string; status: string; estimatedDuration: number; priority: string; subjectId: string; subject: { name: string } };
@@ -20,6 +20,15 @@ function toLocalDateInput(iso: string) {
   const date = new Date(iso);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function analysisStatusLabel(status: string) {
+  if (status === "failed") return "⚠ Analyse impossible";
+  if (status === "processing") return "Analyse en cours…";
+  if (status === "pending") return "En attente d’analyse";
+  return "";
+}
+function analysisStatusTone(status: string) {
+  return status === "failed" ? "failed" : status === "processing" || status === "pending" ? "processing" : "";
 }
 function dateLabel(iso: string) { return new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" }); }
 
@@ -347,10 +356,11 @@ function CourseRow({ course, open, onToggle, editing, onStartEdit, onCancelEdit,
       <div className="data-item">
         <div>
           <strong>{course.title}</strong>
-          <span>{course.subject.name}{course.chapter ? ` · ${course.chapter.name}` : ""}{course.fileUrl ? " · fichier joint" : ""}</span>
+          <span>{course.subject.name}{course.chapter ? ` · ${course.chapter.name}` : ""}{course.fileUrl ? " · fichier joint" : ""}{course.analysisStatus && course.analysisStatus !== "completed" ? <span className="analysis-status" data-state={analysisStatusTone(course.analysisStatus)}>{analysisStatusLabel(course.analysisStatus)}</span> : null}</span>
         </div>
         <div className="item-actions">
           <button className="skip-button" onClick={onToggle} aria-expanded={open}>{open ? "Fermer" : "Lire"}</button>
+          {course.analysisStatus === "failed" && <button className="skip-button" onClick={() => { void queuedFetch("/api/automation?process=true", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "process_course", payload: { courseId: course.id } }) }); }}>Réessayer l&apos;analyse</button>}
           {course.fileUrl && <a className="skip-button" href={`/api/courses/${course.id}/file`} aria-label={`Télécharger le fichier de ${course.title}`}><Download size={13} /> Fichier</a>}
           <button className="icon-button" onClick={onStartEdit} aria-label={`Modifier ${course.title}`}><Pencil size={15} /></button>
           <button className="icon-button danger" onClick={() => { if (window.confirm(`Supprimer le cours « ${course.title} » ?`)) void send(`/api/courses/${course.id}`, "DELETE", undefined, "Cours supprimé."); }} aria-label={`Supprimer ${course.title}`}><Trash2 size={15} /></button>
@@ -358,7 +368,7 @@ function CourseRow({ course, open, onToggle, editing, onStartEdit, onCancelEdit,
       </div>
       {open && (
         <div style={{ padding: "4px 18px 16px" }}>
-          {course.content ? <div className="course-preview">{course.content}</div> : <p className="chart-muted">Aucun texte extrait pour ce cours (import image : l&apos;OCR se termine via Automatisations).</p>}
+          {course.content ? <div className="course-preview">{course.content}</div> : course.analysisStatus === "failed" ? <p className="analysis-error">Impossible d&apos;analyser ce document (texte non extractible). {course.fileUrl ? "Réessaie l'analyse ou importe une version texte." : "Vérifie le format du fichier importé."}</p> : <p className="chart-muted">Aucun texte extrait pour ce cours (import image : l&apos;OCR se termine via Automatisations).</p>}
         </div>
       )}
       {editing && (
@@ -387,17 +397,36 @@ function EvaluationsSection({ subjects, chapters, evaluations, send }: { subject
   const [editTitle, setEditTitle] = useState("");
   const [editDate, setEditDate] = useState("");
   const [lastPlan, setLastPlan] = useState("");
+  const [localNotice, setLocalNotice] = useState("");
 
   const subjectChapters = chapters.filter((chapter) => chapter.subjectId === subjectId);
 
   async function createEvaluation(event: FormEvent) {
     event.preventDefault();
     if (!title.trim() || !subjectId || !date) return;
-    const ok = await send("/api/evaluations", "POST", { title: title.trim(), subjectId, date, chapterIds, importance, difficulty, ...(description.trim() ? { description } : {}) }, "Contrôle créé : le planning de révision a été généré.");
-    if (ok) {
-      setLastPlan(`Contrôle « ${title.trim()} » créé${chapterIds.length ? ` avec ${chapterIds.length} chapitre(s)` : " sans chapitre : aucune révision ciblée ne peut être planifiée"}.`);
-      setTitle(""); setDate(""); setChapterIds([]); setDescription("");
+    setLocalNotice("");
+    const response = await queuedFetch("/api/evaluations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title.trim(), subjectId, date, chapterIds, importance, difficulty, ...(description.trim() ? { description } : {}) }),
+    });
+    if (response.status === 202) { setLocalNotice("Hors ligne : action enregistrée, synchronisée dès la reconnexion."); return; }
+    if (!response.ok) {
+      let detail = "L'action a échoué.";
+      try { const data = await response.json(); detail = data?.error ?? detail; } catch { /* réponse sans JSON */ }
+      setLastPlan("");
+      setLocalNotice(detail);
+      return;
     }
+    try {
+      const data = await response.json();
+      const base = `Contrôle « ${title.trim()} » créé (${data.revisionSessionsCreated} session(s) planifiée(s)).`;
+      setLastPlan(data.placementWarning ? `${base} ${data.placementWarning}` : base);
+      setLocalNotice(data.placementWarning ? "Contrôle créé — attention, créneaux incomplets." : "Contrôle créé : le planning de révision a été généré.");
+    } catch {
+      setLocalNotice("Contrôle créé : le planning de révision a été généré.");
+    }
+    setTitle(""); setDate(""); setChapterIds([]); setDescription("");
   }
 
   return (
@@ -429,6 +458,7 @@ function EvaluationsSection({ subjects, chapters, evaluations, send }: { subject
         <label style={{ marginTop: 12 }}>Informations complémentaires (optionnel)<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Calculatrice autorisée, chapitre 5 exclu…" /></label>
         <button className="primary-button" type="submit" style={{ marginTop: 12 }}><Plus size={16} /> Créer le contrôle</button>
         {lastPlan && <p className="chart-muted" style={{ marginTop: 10 }}>{lastPlan}</p>}
+        {localNotice && <p className={localNotice.includes("échoué") || localNotice.includes("Hors ligne") ? "import-error" : "import-success"} style={{ marginTop: 10 }}>{localNotice}</p>}
       </form>
       <EvaluationsList evaluations={evaluations} send={send} editing={editing} setEditing={setEditing} editTitle={editTitle} setEditTitle={setEditTitle} editDate={editDate} setEditDate={setEditDate} />
     </div>
