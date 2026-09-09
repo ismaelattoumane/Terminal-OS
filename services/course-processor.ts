@@ -1,5 +1,5 @@
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 
 const textTypes = new Set(["text/plain", "text/markdown"]);
 const imageTypes = new Set(["image/png", "image/jpeg"]);
@@ -10,8 +10,15 @@ export async function extractCourseText(file: File) {
   // les .md / .txt, on accepte donc aussi par extension (comme pour .pdf/.docx).
   if (textTypes.has(file.type) || /\.(txt|md|markdown)$/i.test(file.name)) return buffer.toString("utf8");
   if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    const parser = new PDFParse({ data: buffer });
-    try { return (await parser.getText()).text; } finally { await parser.destroy(); }
+    // unpdf embarque un build "serverless" de pdf.js dont le worker est inliné
+    // (exécuté sur le thread principal) : aucun fichier pdf.worker.mjs à
+    // résoudre sur le filesystem, donc compatible Vercel Serverless /var/task.
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    try {
+      return (await extractText(pdf, { mergePages: true })).text;
+    } finally {
+      await pdf.cleanup();
+    }
   }
   if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || file.name.toLowerCase().endsWith(".docx")) return (await mammoth.extractRawText({ buffer })).value;
   if (imageTypes.has(file.type)) return null;

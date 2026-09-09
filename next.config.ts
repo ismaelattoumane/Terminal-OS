@@ -1,16 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // pdf-parse -> pdfjs-dist (legacy) charge @napi-rs/canvas via un require
-  // dynamique (createRequire) à l'exécution Node. Bundler ces packages casse
-  // cette résolution (et les chemins wasm/cmaps) : on les laisse externes, la
-  // résolution se fait depuis node_modules au runtime (identique local/Vercel).
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas"],
+  // PDF : unpdf embarque un build "serverless" de pdf.js dont le worker est
+  // inliné (exécution sur le thread principal). Contrairement à pdf-parse →
+  // pdfjs-dist (qui chargeait pdf.worker.mjs via un import dynamique non
+  // traçable par nft → absent du Lambda Vercel → « Setting up fake worker
+  // failed »), unpdf n'a besoin d'aucun fichier worker sur le filesystem.
+  // On le garde externe pour que la résolution se fasse depuis node_modules
+  // au runtime (traçage nft complet des imports statiques du package).
+  // @napi-rs/canvas : requis par tesseract.js pour l'OCR image.
+  serverExternalPackages: ["unpdf", "@napi-rs/canvas"],
   // Le file-tracing de Next/Vercel ne détecte pas le require dynamique de
-  // "@napi-rs/canvas" fait par pdfjs-dist/legacy/build/pdf.mjs : on force son
-  // inclusion (binaire natif inclus) dans les deux routes serveur qui
-  // extraient du texte de PDF, sans quoi le Lambda Vercel retourne
-  // « Cannot find module '@napi-rs/canvas' » à l'upload d'un PDF.
+  // "@napi-rs/canvas" fait par tesseract.js : on force son inclusion (binaire
+  // natif inclus) dans les routes serveur qui font de l'OCR image, sans quoi
+  // le Lambda Vercel ne peut pas décoder les images.
   outputFileTracingIncludes: {
     "/api/courses/upload": [
       "./node_modules/@napi-rs/canvas/**/*",

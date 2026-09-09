@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 import { ocrImageToText } from "@/services/ocr";
 
 // ── Types --------------------------------------------------------------------
@@ -235,13 +235,15 @@ async function extractTextFromFile(file: File): Promise<{ text: string; sourceTy
   const buffer = Buffer.from(await file.arrayBuffer());
   const lower = file.name.toLowerCase();
   if (file.type === "application/pdf" || lower.endsWith(".pdf")) {
-    const parser = new PDFParse({ data: buffer });
+    // unpdf : worker pdf.js inliné (pas de pdf.worker.mjs à charger depuis
+    // node_modules) → fonctionne en serverless Vercel comme en local.
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
     try {
-      const { text } = await parser.getText();
+      const { text } = await extractText(pdf, { mergePages: true });
       if (!text.trim()) throw new Error("PDF sans texte extractible (document composé d'images ?)");
       return { text, sourceType: "pdf" };
     } finally {
-      await parser.destroy();
+      await pdf.cleanup();
     }
   }
   if (file.type === "text/csv" || lower.endsWith(".csv")) return { text: buffer.toString("utf8"), sourceType: "csv" };
